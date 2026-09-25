@@ -98,7 +98,19 @@ try {
     );
     $ownerNullableQuery->execute();
     if ($ownerNullableQuery->fetchColumn() === 'YES') {
+        // MySQL/MariaDB refuse to MODIFY a column referenced by an active
+        // foreign key, so the constraint must be dropped and recreated
+        // around the NOT NULL change.
+        $hasOwnerFk = foreignKeyExists($db, 'events', 'fk_events_owner');
+        if ($hasOwnerFk) {
+            $db->exec('ALTER TABLE events DROP FOREIGN KEY fk_events_owner');
+        }
         $db->exec('ALTER TABLE events MODIFY owner_user_id BIGINT UNSIGNED NOT NULL');
+        if ($hasOwnerFk) {
+            $db->exec(
+                'ALTER TABLE events ADD CONSTRAINT fk_events_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE'
+            );
+        }
     }
 
     $db->beginTransaction();
