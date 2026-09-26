@@ -4,10 +4,13 @@
 
 | Documento | Para quién | Contenido |
 | --- | --- | --- |
-| [manual-usuario.md](./manual-usuario.md) | Cualquier persona con cuenta (organizadores de eventos) | Cómo registrarse, crear eventos, administrar el roster, invitar personas y ver respuestas RSVP. |
+| [manual-usuario.md](./manual-usuario.md) / [Manual_Usuario.md](./Manual_Usuario.md) | Cualquier persona con cuenta (organizadores de eventos) | Cómo registrarse, crear eventos, administrar el roster, invitar personas y ver respuestas RSVP. |
 | [manual-invitado.md](./manual-invitado.md) | Invitados que reciben un enlace RSVP | Cómo abrir el enlace, confirmar o declinar asistencia, y qué pasa si el enlace ya no funciona. |
 | [manual-administrador.md](./manual-administrador.md) | El administrador del sistema (`development@dataholics.com.mx`) | Gestión de cuentas, auditoría, acceso global y tareas exclusivas de admin. |
-| [guia-tecnica.md](./guia-tecnica.md) | Desarrolladores | Arquitectura, esquema de base de datos, endpoints de la API, seguridad y estructura del código. |
+| [guia-tecnica.md](./guia-tecnica.md) / [Manual_Tecnico.md](./Manual_Tecnico.md) | Desarrolladores y agentes TiRA | Arquitectura, esquema de base de datos, endpoints de la API, seguridad y estructura del código. |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Arquitectura y Agentes Autónomos (TiRA/K-2SO) | Visión del sistema, stack, seguridad, RBAC y mapa de componentes. |
+| [DATABASE.md](./DATABASE.md) | Ingenieros de datos / DBA (TiRA Track 3) | Diccionario completo de datos, tablas, índices, llaves foráneas y consultas SQL modelo. |
+| [API_CONTRACTS.md](./API_CONTRACTS.md) | Integradores frontend/backend | Catálogo exhaustivo de endpoints REST, headers, payloads y códigos HTTP. |
 | [despliegue-site5.md](./despliegue-site5.md) | Quien instala o actualiza el sitio en producción | Pasos exactos para instalar, migrar y actualizar en Site5/cPanel, incluida la limitación de FTP. |
 | [preguntas-frecuentes.md](./preguntas-frecuentes.md) | Todos | Preguntas comunes y solución de problemas conocidos. |
 
