@@ -2,6 +2,8 @@
 
 MVP multiusuario para administrar eventos propios, un roster privado de personas e invitaciones con RSVP individual. El frontend React se compila a archivos estáticos; la API usa PHP 8+, PDO y MySQL para hosting compartido con cPanel.
 
+> **Documentación completa:** manuales de usuario, invitado y administrador, guía técnica, procedimiento de despliegue en Site5 y preguntas frecuentes están en [docs/](./docs/README.md).
+
 ## Estructura
 
 - `database/schema.sql`: esquema de usuarios, sesiones, eventos, roster, invitaciones, auditoría y tablas familiares históricas.
