@@ -125,14 +125,20 @@ function AuthScreen({ onAction, notice, resetToken }) {
 }
 
 function RsvpPage({ token }) {
-  const [invitation, setInvitation] = useState(null)
+  const [invite, setInvite] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [adults, setAdults] = useState(0)
+  const [children, setChildren] = useState(0)
 
   useEffect(() => {
     post('/rsvp/lookup', { token })
-      .then((response) => setInvitation(response.data))
+      .then((response) => {
+        setInvite(response.data)
+        setAdults(response.data.actual_adults ?? response.data.estimated_adults)
+        setChildren(response.data.actual_children ?? response.data.estimated_children)
+      })
       .catch((requestError) => setError(requestError.message))
   }, [token])
 
@@ -140,8 +146,8 @@ function RsvpPage({ token }) {
     setBusy(true)
     setError('')
     try {
-      await post('/rsvp/respond', { token, status })
-      setInvitation((current) => ({ ...current, status }))
+      await post('/rsvp/respond', { token, status, actual_adults: adults, actual_children: children })
+      setInvite((current) => ({ ...current, status, actual_adults: status === 'accepted' ? adults : 0, actual_children: status === 'accepted' ? children : 0 }))
       setMessage('Tu respuesta quedó registrada.')
     } catch (requestError) {
       setError(requestError.message)
@@ -154,15 +160,19 @@ function RsvpPage({ token }) {
     <main className="login-screen rsvp-screen">
       <section className="login-panel rsvp-panel">
         <div className="brand-mark"><CheckCheck size={21} /></div>
-        <p className="eyebrow">INVITACIÓN PERSONAL</p>
+        <p className="eyebrow">INVITACIÓN FAMILIAR</p>
         {error && <p className="form-error" role="alert">{error}</p>}
-        {invitation ? <>
-          <h1>Hola, {invitation.guest_name}.</h1>
-          <p className="login-copy">Estás invitado/a a <strong>{invitation.event_name}</strong>{invitation.event_date ? ` · ${invitation.event_date}` : ''}.</p>
-          <p className="rsvp-current">{message || (invitation.status === 'pending' ? '¿Nos acompañas?' : invitation.status === 'accepted' ? 'Tu respuesta: asistirás.' : 'Tu respuesta: no podrás asistir.')}</p>
+        {invite ? <>
+          <h1>Hola, {invite.responsible_name}.</h1>
+          <p className="login-copy">La familia <strong>{invite.family_label}</strong> está invitada a <strong>{invite.event_name}</strong>{invite.event_date ? ` · ${invite.event_date}` : ''}.</p>
+          <p className="rsvp-current">{message || (invite.status === 'pending' ? '¿Nos acompañan? Ajusta cuántos son si hace falta.' : invite.status === 'accepted' ? `Su respuesta: asistirán ${invite.actual_adults} adulto(s) y ${invite.actual_children} niño(s).` : 'Su respuesta: no podrán asistir.')}</p>
+          {invite.status !== 'declined' && <div className="contact-form-row rsvp-count-row">
+            <label className="field"><span>Adultos que asistirán</span><input type="number" min="0" max="1000" value={adults} onChange={(event) => setAdults(Number(event.target.value))} /></label>
+            <label className="field"><span>Niños que asistirán</span><input type="number" min="0" max="1000" value={children} onChange={(event) => setChildren(Number(event.target.value))} /></label>
+          </div>}
           <div className="rsvp-actions">
-            <button className="button button-primary" disabled={busy} onClick={() => answer('accepted')}><Check size={16} /> Sí, asistiré</button>
-            <button className="button button-quiet" disabled={busy} onClick={() => answer('declined')}><X size={16} /> No podré</button>
+            <button className="button button-primary" disabled={busy} onClick={() => answer('accepted')}><Check size={16} /> Sí, asistiremos</button>
+            <button className="button button-quiet" disabled={busy} onClick={() => answer('declined')}><X size={16} /> No podremos</button>
           </div>
         </> : !error && <p className="login-copy">Cargando invitación…</p>}
       </section>
@@ -184,22 +194,23 @@ function EventForm({ event, onSave, onCancel, busy }) {
   )
 }
 
-function ContactForm({ contact, onSave, onCancel, busy }) {
+function FamilyGroupForm({ group, onSave, onCancel, busy }) {
   return (
     <form className="contact-form" onSubmit={(event) => {
       event.preventDefault()
       const data = Object.fromEntries(new FormData(event.currentTarget).entries())
       onSave(data)
     }}>
-      <label className="field"><span>Nombre</span><input name="name" defaultValue={contact?.name || ''} required maxLength={160} /></label>
-      <label className="field"><span>Correo para RSVP (opcional)</span><input name="email" type="email" defaultValue={contact?.email || ''} maxLength={254} /></label>
+      <label className="field"><span>Nombre de la familia</span><input name="family_label" defaultValue={group?.family_label || ''} required maxLength={160} placeholder="Ej. Familia Gutiérrez" /></label>
+      <label className="field"><span>Punto de contacto responsable</span><input name="responsible_name" defaultValue={group?.responsible_name || ''} required maxLength={160} placeholder="Ej. Gustavo Gutiérrez" /></label>
+      <label className="field"><span>Correo del responsable (opcional)</span><input name="responsible_email" type="email" defaultValue={group?.responsible_email || ''} maxLength={254} /></label>
+      <label className="field"><span>Teléfono del responsable (opcional)</span><input name="responsible_phone" defaultValue={group?.responsible_phone || ''} maxLength={40} /></label>
       <div className="contact-form-row">
-        <label className="field"><span>Edad</span><input name="age" type="number" min="0" max="120" defaultValue={contact?.age ?? ''} /></label>
-        <label className="field"><span>Tipo</span><select name="type" defaultValue={contact?.type || 'adult'}><option value="adult">Adulto</option><option value="child">Niño/a</option></select></label>
+        <label className="field"><span>Adultos estimados</span><input name="estimated_adults" type="number" min="0" max="100" defaultValue={group?.estimated_adults ?? 1} required /></label>
+        <label className="field"><span>Niños estimados</span><input name="estimated_children" type="number" min="0" max="100" defaultValue={group?.estimated_children ?? 0} required /></label>
       </div>
-      <label className="field"><span>Restricciones alimentarias</span><input name="dietary_restrictions" defaultValue={contact?.dietary_restrictions || ''} /></label>
-      <label className="field"><span>Notas</span><textarea name="notes" rows="2" defaultValue={contact?.notes || ''} /></label>
-      <div className="inline-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : contact ? 'Guardar cambios' : 'Guardar contacto'}</button></div>
+      <label className="field"><span>Notas (opcional; restricciones, detalles sueltos)</span><textarea name="notes" rows="2" defaultValue={group?.notes || ''} placeholder="Ej. no recuerdo la edad de sus hijos" /></label>
+      <div className="inline-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : group ? 'Guardar cambios' : 'Guardar familia'}</button></div>
     </form>
   )
 }
@@ -207,17 +218,17 @@ function ContactForm({ contact, onSave, onCancel, busy }) {
 function Workspace({ user, csrfToken, onLogout }) {
   const [view, setView] = useState('events')
   const [events, setEvents] = useState([])
-  const [contacts, setContacts] = useState([])
-  const [invitations, setInvitations] = useState([])
+  const [familyGroups, setFamilyGroups] = useState([])
+  const [familyInvites, setFamilyInvites] = useState([])
   const [families, setFamilies] = useState([])
   const [users, setUsers] = useState([])
   const [activeEvent, setActiveEvent] = useState(null)
   const [eventTab, setEventTab] = useState('invitations')
-  const [selectedContacts, setSelectedContacts] = useState([])
+  const [selectedGroups, setSelectedGroups] = useState([])
   const [eventFormOpen, setEventFormOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
-  const [contactFormOpen, setContactFormOpen] = useState(false)
-  const [editingContact, setEditingContact] = useState(null)
+  const [groupFormOpen, setGroupFormOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState(null)
   const [links, setLinks] = useState({})
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -228,23 +239,23 @@ function Workspace({ user, csrfToken, onLogout }) {
     setEvents(result.data || [])
   }
 
-  async function loadContacts() {
-    const result = await apiRequest('/contacts')
-    setContacts(result.data || [])
+  async function loadFamilyGroups() {
+    const result = await apiRequest('/family-groups')
+    setFamilyGroups(result.data || [])
   }
 
   async function loadEvent(event) {
     const [inviteResult, familyResult] = await Promise.all([
-      apiRequest(`/events/${event.id}/invitations`),
+      apiRequest(`/events/${event.id}/family-invites`),
       apiRequest(`/families?event_id=${event.id}`),
     ])
-    setInvitations(inviteResult.data || [])
+    setFamilyInvites(inviteResult.data || [])
     setFamilies(familyResult.data || [])
   }
 
   useEffect(() => {
     loadEvents().catch((error) => setNotice({ kind: 'error', text: error.message }))
-    loadContacts().catch((error) => setNotice({ kind: 'error', text: error.message }))
+    loadFamilyGroups().catch((error) => setNotice({ kind: 'error', text: error.message }))
   }, [])
 
   useEffect(() => {
@@ -272,18 +283,18 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
-  async function saveContact(data) {
+  async function saveFamilyGroup(data) {
     setBusy(true)
     try {
-      if (editingContact) {
-        await apiRequest(`/contacts/${editingContact.id}`, { method: 'PATCH', body: data }, csrfToken)
+      if (editingGroup) {
+        await apiRequest(`/family-groups/${editingGroup.id}`, { method: 'PATCH', body: data }, csrfToken)
       } else {
-        await post('/contacts', data, csrfToken)
+        await post('/family-groups', data, csrfToken)
       }
-      setContactFormOpen(false)
-      setEditingContact(null)
-      await loadContacts()
-      setNotice({ kind: 'success', text: editingContact ? 'Contacto actualizado.' : 'Contacto agregado al roster.' })
+      setGroupFormOpen(false)
+      setEditingGroup(null)
+      await loadFamilyGroups()
+      setNotice({ kind: 'success', text: editingGroup ? 'Familia actualizada.' : 'Familia agregada al roster.' })
     } catch (error) {
       setNotice({ kind: 'error', text: error.message })
     } finally {
@@ -291,13 +302,13 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
-  async function createInvitations() {
-    if (!activeEvent || !selectedContacts.length) return
+  async function createFamilyInvites() {
+    if (!activeEvent || !selectedGroups.length) return
     setBusy(true)
     try {
-      const result = await post(`/events/${activeEvent.id}/invitations`, { contact_ids: selectedContacts }, csrfToken)
+      const result = await post(`/events/${activeEvent.id}/family-invites`, { family_group_ids: selectedGroups }, csrfToken)
       setLinks((current) => ({ ...current, ...Object.fromEntries(result.data.map((invite) => [invite.id, invite.rsvp_url])) }))
-      setSelectedContacts([])
+      setSelectedGroups([])
       await loadEvent(activeEvent)
       const mailed = result.data.filter((invite) => invite.email_sent).length
       setNotice({ kind: 'success', text: `${result.data.length} invitación(es) creada(s).${mailed ? ` ${mailed} correo(s) enviado(s).` : ' Puedes copiar los enlaces RSVP.'}` })
@@ -308,10 +319,27 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
-  async function revokeInvitation(invitation) {
+  async function updateFamilyInvite(invite, changes) {
     try {
-      await apiRequest(`/invitations/${invitation.id}`, { method: 'DELETE' }, csrfToken)
-      setLinks((current) => { const next = { ...current }; delete next[invitation.id]; return next })
+      await apiRequest(`/family-invites/${invite.id}`, {
+        method: 'PATCH',
+        body: {
+          status: invite.status,
+          actual_adults: invite.actual_adults ?? invite.estimated_adults,
+          actual_children: invite.actual_children ?? invite.estimated_children,
+          ...changes,
+        },
+      }, csrfToken)
+      await loadEvent(activeEvent)
+    } catch (error) {
+      setNotice({ kind: 'error', text: error.message })
+    }
+  }
+
+  async function revokeFamilyInvite(invite) {
+    try {
+      await apiRequest(`/family-invites/${invite.id}`, { method: 'DELETE' }, csrfToken)
+      setLinks((current) => { const next = { ...current }; delete next[invite.id]; return next })
       await loadEvent(activeEvent)
       setNotice({ kind: 'success', text: 'Invitación revocada.' })
     } catch (error) {
@@ -319,12 +347,12 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
-  async function deleteContact(contact) {
-    if (!window.confirm(`¿Eliminar a ${contact.name} del roster?`)) return
+  async function deleteFamilyGroup(group) {
+    if (!window.confirm(`¿Eliminar a la familia ${group.family_label} del roster?`)) return
     try {
-      await apiRequest(`/contacts/${contact.id}`, { method: 'DELETE' }, csrfToken)
-      await loadContacts()
-      setNotice({ kind: 'success', text: 'Contacto eliminado; sus invitaciones conservan el historial.' })
+      await apiRequest(`/family-groups/${group.id}`, { method: 'DELETE' }, csrfToken)
+      await loadFamilyGroups()
+      setNotice({ kind: 'success', text: 'Familia eliminada; sus invitaciones conservan el historial.' })
     } catch (error) {
       setNotice({ kind: 'error', text: error.message })
     }
@@ -362,16 +390,16 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
-  async function copyLink(invitation) {
+  async function copyLink(invite) {
     try {
-      let link = links[invitation.id]
+      let link = links[invite.id]
       if (!link) {
-        const result = await post(`/invitations/${invitation.id}/link`, {}, csrfToken)
+        const result = await post(`/family-invites/${invite.id}/link`, {}, csrfToken)
         link = result.data.rsvp_url
-        setLinks((current) => ({ ...current, [invitation.id]: link }))
+        setLinks((current) => ({ ...current, [invite.id]: link }))
       }
       await navigator.clipboard.writeText(link)
-      setNotice({ kind: 'success', text: `Enlace RSVP copiado para ${invitation.guest_name}.` })
+      setNotice({ kind: 'success', text: `Enlace RSVP copiado para la familia ${invite.family_label}.` })
     } catch (error) {
       setNotice({ kind: 'error', text: error.message || 'No se pudo copiar el enlace.' })
     }
@@ -382,10 +410,12 @@ function Workspace({ user, csrfToken, onLogout }) {
     loadAdmin()
   }
 
-  const filteredContacts = contacts.filter((contact) => `${contact.name} ${contact.email || ''}`.toLocaleLowerCase('es').includes(search.trim().toLocaleLowerCase('es')))
-  const acceptedCount = invitations.filter((invite) => invite.status === 'accepted').length
-  const pendingCount = invitations.filter((invite) => invite.status === 'pending').length
-  const declinedCount = invitations.filter((invite) => invite.status === 'declined').length
+  const filteredGroups = familyGroups.filter((group) => `${group.family_label} ${group.responsible_name}`.toLocaleLowerCase('es').includes(search.trim().toLocaleLowerCase('es')))
+  const acceptedCount = familyInvites.filter((invite) => invite.status === 'accepted').length
+  const pendingCount = familyInvites.filter((invite) => invite.status === 'pending').length
+  const declinedCount = familyInvites.filter((invite) => invite.status === 'declined').length
+  const estimatedGuests = familyInvites.reduce((sum, invite) => sum + invite.estimated_adults + invite.estimated_children, 0)
+  const confirmedGuests = familyInvites.filter((invite) => invite.status === 'accepted').reduce((sum, invite) => sum + (invite.actual_adults ?? invite.estimated_adults) + (invite.actual_children ?? invite.estimated_children), 0)
 
   return (
     <div className="app-shell">
@@ -394,7 +424,7 @@ function Workspace({ user, csrfToken, onLogout }) {
         <div className="sidebar-section-label">ORGANIZACIÓN</div>
         <nav className="sidebar-nav" aria-label="Navegación principal">
           <button className={`nav-item ${view === 'events' || view === 'event' ? 'nav-item-active' : ''}`} onClick={() => { setView('events'); setActiveEvent(null); setEventFormOpen(false); setEditingEvent(null) }}><CalendarDays size={17} /> Eventos <span className="nav-count">{events.length}</span></button>
-          <button className={`nav-item ${view === 'contacts' ? 'nav-item-active' : ''}`} onClick={() => { setView('contacts'); setActiveEvent(null) }}><Users size={17} /> Roster <span className="nav-count">{contacts.length}</span></button>
+          <button className={`nav-item ${view === 'contacts' ? 'nav-item-active' : ''}`} onClick={() => { setView('contacts'); setActiveEvent(null) }}><Users size={17} /> Familias <span className="nav-count">{familyGroups.length}</span></button>
           {user.role === 'admin' && <button className={`nav-item ${view === 'admin' ? 'nav-item-active' : ''}`} onClick={openAdmin}><ShieldCheck size={17} /> Administración</button>}
         </nav>
         <div className="sidebar-bottom"><div className="privacy-note"><UserRound size={16} /><span>{user.display_name}<br />{user.email}</span></div><button className="logout-button" onClick={onLogout}><LogOut size={16} /> Cerrar sesión</button></div>
@@ -402,8 +432,8 @@ function Workspace({ user, csrfToken, onLogout }) {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumb"><span>Workspace</span><span className="crumb-divider">/</span><strong>{view === 'event' ? activeEvent?.event_name : view === 'contacts' ? 'Roster' : view === 'admin' ? 'Administración' : 'Eventos'}</strong></div>
-          <div className="topbar-actions"><span className="event-name">{user.role === 'admin' ? 'Administrador' : 'Cuenta personal'}</span><button className="icon-button" title="Actualizar" aria-label="Actualizar" onClick={() => view === 'contacts' ? loadContacts() : view === 'event' && activeEvent ? loadEvent(activeEvent) : loadEvents()}><RefreshCw size={17} /></button></div>
+          <div className="breadcrumb"><span>Workspace</span><span className="crumb-divider">/</span><strong>{view === 'event' ? activeEvent?.event_name : view === 'contacts' ? 'Familias' : view === 'admin' ? 'Administración' : 'Eventos'}</strong></div>
+          <div className="topbar-actions"><span className="event-name">{user.role === 'admin' ? 'Administrador' : 'Cuenta personal'}</span><button className="icon-button" title="Actualizar" aria-label="Actualizar" onClick={() => view === 'contacts' ? loadFamilyGroups() : view === 'event' && activeEvent ? loadEvent(activeEvent) : loadEvents()}><RefreshCw size={17} /></button></div>
         </header>
 
         <div className="page-wrap">
@@ -420,23 +450,23 @@ function Workspace({ user, csrfToken, onLogout }) {
           {view === 'event' && activeEvent && <>
             <section className="page-heading event-page-heading"><div><button className="back-link" onClick={() => { setView('events'); setActiveEvent(null); setEventFormOpen(false); setEditingEvent(null) }}><ArrowLeft size={15} /> Todos los eventos</button><p className="eyebrow">EVENTO</p><h1>{activeEvent.event_name}</h1><p className="page-subtitle">{activeEvent.event_date || 'Fecha por definir'} · Invitaciones y respuestas personales.</p></div><div className="event-actions"><button className="button button-secondary" onClick={() => { setEditingEvent(activeEvent); setEventFormOpen(true) }}><Pencil size={15} /> Editar</button><button className="button button-quiet" onClick={() => deleteEvent(activeEvent)}><Trash2 size={15} /> Eliminar evento</button></div></section>
             {eventFormOpen && <section className="management-panel"><div className="panel-title-row"><h2>Editar evento</h2><button className="icon-button quiet" onClick={() => { setEventFormOpen(false); setEditingEvent(null) }} aria-label="Cerrar"><X size={17} /></button></div><EventForm event={editingEvent} onSave={saveEvent} onCancel={() => { setEventFormOpen(false); setEditingEvent(null) }} busy={busy} /></section>}
-            <section className="stats-row"><div className="stat-block"><span>Invitados</span><strong>{invitations.length.toString().padStart(2, '0')}</strong><small>personas</small></div><div className="stat-block stat-accent"><span>Aceptaron</span><strong>{acceptedCount.toString().padStart(2, '0')}</strong><small>asistirán</small></div><div className="stat-block"><span>Pendientes</span><strong>{pendingCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div><div className="stat-block"><span>Declinaron</span><strong>{declinedCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div></section>
-            <div className="management-tabs" role="tablist"><button className={eventTab === 'invitations' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('invitations')} role="tab" aria-selected={eventTab === 'invitations'}>Invitaciones <span>{invitations.length}</span></button><button className={eventTab === 'families' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('families')} role="tab" aria-selected={eventTab === 'families'}>Lista familiar histórica <span>{families.length}</span></button></div>
+            <section className="stats-row"><div className="stat-block"><span>Familias</span><strong>{familyInvites.length.toString().padStart(2, '0')}</strong><small>invitadas</small></div><div className="stat-block"><span>Personas estimadas</span><strong>{estimatedGuests.toString().padStart(2, '0')}</strong><small>al confirmar todos</small></div><div className="stat-block stat-accent"><span>Confirmados</span><strong>{confirmedGuests.toString().padStart(2, '0')}</strong><small>personas asistirán</small></div><div className="stat-block"><span>Pendientes</span><strong>{pendingCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div><div className="stat-block"><span>Declinaron</span><strong>{declinedCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div></section>
+            <div className="management-tabs" role="tablist"><button className={eventTab === 'invitations' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('invitations')} role="tab" aria-selected={eventTab === 'invitations'}>Familias invitadas <span>{familyInvites.length}</span></button><button className={eventTab === 'families' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('families')} role="tab" aria-selected={eventTab === 'families'}>Lista familiar histórica <span>{families.length}</span></button></div>
             {eventTab === 'invitations' ? <section className="event-manager-grid">
-              <div className="management-panel"><div className="panel-title-row"><div><p className="eyebrow">ROSTER DISPONIBLE</p><h2>Elige a quién invitar</h2></div><button className="button button-secondary" onClick={() => setView('contacts')}><Users size={15} /> Editar roster</button></div>
-                {contacts.length ? <><div className="selectable-roster">{contacts.map((contact) => <label className="selectable-contact" key={contact.id}><input type="checkbox" checked={selectedContacts.includes(contact.id)} onChange={(event) => setSelectedContacts((current) => event.target.checked ? [...current, contact.id] : current.filter((id) => id !== contact.id))} /><span className="member-avatar">{contact.name.charAt(0).toUpperCase()}</span><span className="member-info"><strong>{contact.name}</strong><small>{contact.email || 'Sin correo'} · {contact.type === 'child' ? 'Niño/a' : 'Adulto'}</small></span></label>)}</div><button className="button button-primary" disabled={busy || !selectedContacts.length} onClick={createInvitations}><Plus size={15} /> Invitar seleccionados ({selectedContacts.length})</button></> : <div className="empty-state compact"><p>Agrega personas al roster antes de invitar.</p><button className="button button-secondary" onClick={() => setView('contacts')}><Plus size={15} /> Abrir roster</button></div>}
+              <div className="management-panel"><div className="panel-title-row"><div><p className="eyebrow">ROSTER DISPONIBLE</p><h2>Elige qué familias invitar</h2></div><button className="button button-secondary" onClick={() => setView('contacts')}><Users size={15} /> Editar familias</button></div>
+                {familyGroups.length ? <><div className="selectable-roster">{familyGroups.map((group) => <label className="selectable-contact" key={group.id}><input type="checkbox" checked={selectedGroups.includes(group.id)} onChange={(event) => setSelectedGroups((current) => event.target.checked ? [...current, group.id] : current.filter((id) => id !== group.id))} /><span className={`member-avatar ${group.semaphore_color === 'red' ? 'avatar-child' : ''}`}>{group.family_label.charAt(0).toUpperCase()}</span><span className="member-info"><strong>{group.family_label}</strong><small>{group.responsible_name} · {group.estimated_adults} adulto(s), {group.estimated_children} niño(s)</small></span></label>)}</div><button className="button button-primary" disabled={busy || !selectedGroups.length} onClick={createFamilyInvites}><Plus size={15} /> Invitar seleccionadas ({selectedGroups.length})</button></> : <div className="empty-state compact"><p>Agrega familias al roster antes de invitar.</p><button className="button button-secondary" onClick={() => setView('contacts')}><Plus size={15} /> Abrir familias</button></div>}
               </div>
-              <div className="management-panel"><div className="panel-title-row"><div><p className="eyebrow">SEGUIMIENTO</p><h2>Respuestas</h2></div><span className="response-count">{invitations.length}</span></div>
-                {invitations.length ? <div className="invitation-list">{invitations.map((invite) => <article className="invitation-row" key={invite.id}><span className={`rsvp-dot rsvp-${invite.status}`} /><div className="member-info"><strong>{invite.guest_name}</strong><small>{invite.guest_email || 'Enlace para compartir'}</small></div><span className={`rsvp-status rsvp-status-${invite.status}`}>{({ pending: 'Pendiente', accepted: 'Aceptó', declined: 'Declinó' })[invite.status]}</span><button className="icon-button" title="Copiar enlace RSVP" aria-label={`Copiar enlace para ${invite.guest_name}`} onClick={() => copyLink(invite)}><Copy size={15} /></button><button className="icon-button quiet" title="Revocar invitación" aria-label={`Revocar invitación de ${invite.guest_name}`} onClick={() => revokeInvitation(invite)}><X size={15} /></button></article>)}</div> : <div className="empty-state compact"><p>Todavía no hay invitaciones para este evento.</p></div>}
+              <div className="management-panel"><div className="panel-title-row"><div><p className="eyebrow">SEGUIMIENTO</p><h2>Respuestas</h2></div><span className="response-count">{familyInvites.length}</span></div>
+                {familyInvites.length ? <div className="invitation-list">{familyInvites.map((invite) => <article className="invitation-row" key={invite.id}><span className={`rsvp-dot rsvp-${invite.status}`} /><div className="member-info"><strong>{invite.family_label}</strong><small>{invite.responsible_name} · estimado {invite.estimated_adults}A/{invite.estimated_children}N</small></div><div className="count-adjust" title="Conteo real de asistentes"><input type="number" min="0" max="1000" aria-label={`Adultos confirmados de ${invite.family_label}`} defaultValue={invite.actual_adults ?? invite.estimated_adults} onBlur={(event) => updateFamilyInvite(invite, { actual_adults: Number(event.target.value) })} /><span>A</span><input type="number" min="0" max="1000" aria-label={`Niños confirmados de ${invite.family_label}`} defaultValue={invite.actual_children ?? invite.estimated_children} onBlur={(event) => updateFamilyInvite(invite, { actual_children: Number(event.target.value) })} /><span>N</span></div><select className="role-select" value={invite.status} onChange={(event) => updateFamilyInvite(invite, { status: event.target.value })} aria-label={`Estado de ${invite.family_label}`}><option value="pending">Pendiente</option><option value="accepted">Aceptó</option><option value="declined">Declinó</option></select><button className="icon-button" title="Copiar enlace RSVP" aria-label={`Copiar enlace para ${invite.family_label}`} onClick={() => copyLink(invite)}><Copy size={15} /></button><button className="icon-button quiet" title="Revocar invitación" aria-label={`Revocar invitación de ${invite.family_label}`} onClick={() => revokeFamilyInvite(invite)}><X size={15} /></button></article>)}</div> : <div className="empty-state compact"><p>Todavía no hay familias invitadas a este evento.</p></div>}
               </div>
             </section> : <section className="family-grid legacy-grid">{families.length ? families.map((family) => <article className="family-card" key={family.id}><div className="family-card-topline"><span className={`complexity complexity-${family.semaphore_color}`}><span className="complexity-dot" />Histórico</span><span className="status-label status-draft">{family.status === 'confirmed' ? 'Confirmada' : 'Borrador'}</span></div><div className="family-heading"><div><h3>{family.family_name}</h3><p>{family.members.length} integrantes · {family.actual_count} asistencia histórica</p></div></div><ul className="member-list">{family.members.map((member) => <li key={member.id}><span className="member-avatar">{member.name.charAt(0).toUpperCase()}</span><span className="member-info"><strong>{member.name}</strong><small>{member.dietary_restrictions || member.notes || 'Sin notas'}</small></span></li>)}</ul></article>) : <div className="empty-state"><p>No hay familias históricas en este evento.</p></div>}</section>}
           </>}
 
           {view === 'contacts' && <>
-            <section className="page-heading"><div><p className="eyebrow">PERSONAS</p><h1>Tu roster<br />reutilizable.</h1><p className="page-subtitle">Contactos privados de {user.display_name}; elige a quién invitar en cada evento.</p></div><button className="button button-primary" onClick={() => setContactFormOpen(true)}><Plus size={17} /> Nuevo contacto</button></section>
-            {contactFormOpen && <section className="management-panel contact-create-panel"><div className="panel-title-row"><h2>{editingContact ? 'Editar persona' : 'Agregar persona'}</h2><button className="icon-button quiet" onClick={() => { setContactFormOpen(false); setEditingContact(null) }} aria-label="Cerrar"><X size={17} /></button></div><ContactForm contact={editingContact} onSave={saveContact} onCancel={() => { setContactFormOpen(false); setEditingContact(null) }} busy={busy} /></section>}
-            <label className="search-box roster-search"><Users size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar nombre o correo" aria-label="Buscar en el roster" /></label>
-            <section className="contact-list">{filteredContacts.length ? filteredContacts.map((contact) => <article className="contact-row" key={contact.id}><span className="member-avatar">{contact.name.charAt(0).toUpperCase()}</span><div className="member-info"><strong>{contact.name}</strong><small>{contact.email || 'Sin correo para RSVP'} · {contact.type === 'child' ? 'Niño/a' : 'Adulto'}{contact.age !== null ? ` · ${contact.age} años` : ''}</small>{(contact.dietary_restrictions || contact.notes) && <small>{[contact.dietary_restrictions, contact.notes].filter(Boolean).join(' · ')}</small>}</div>{contact.owner_email && <span className="owner-label">{contact.owner_email}</span>}<button className="icon-button quiet" title="Editar contacto" aria-label={`Editar ${contact.name}`} onClick={() => { setEditingContact(contact); setContactFormOpen(true) }}><Pencil size={15} /></button><button className="icon-button quiet" title="Eliminar contacto" aria-label={`Eliminar ${contact.name}`} onClick={() => deleteContact(contact)}><Trash2 size={15} /></button></article>) : <div className="empty-state"><div className="empty-mark"><Users size={22} /></div><h2>El roster está vacío</h2><p>Agrega personas y reutilízalas en diferentes eventos.</p><button className="button button-primary" onClick={() => setContactFormOpen(true)}><Plus size={15} /> Agregar persona</button></div>}</section>
+            <section className="page-heading"><div><p className="eyebrow">FAMILIAS</p><h1>Tu roster<br />reutilizable.</h1><p className="page-subtitle">Familias privadas de {user.display_name}, con un responsable de contacto y conteos estimados; invítalas a cualquiera de tus eventos.</p></div><button className="button button-primary" onClick={() => setGroupFormOpen(true)}><Plus size={17} /> Nueva familia</button></section>
+            {groupFormOpen && <section className="management-panel contact-create-panel"><div className="panel-title-row"><h2>{editingGroup ? 'Editar familia' : 'Agregar familia'}</h2><button className="icon-button quiet" onClick={() => { setGroupFormOpen(false); setEditingGroup(null) }} aria-label="Cerrar"><X size={17} /></button></div><FamilyGroupForm group={editingGroup} onSave={saveFamilyGroup} onCancel={() => { setGroupFormOpen(false); setEditingGroup(null) }} busy={busy} /></section>}
+            <label className="search-box roster-search"><Users size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar familia o responsable" aria-label="Buscar en el roster" /></label>
+            <section className="contact-list">{filteredGroups.length ? filteredGroups.map((group) => <article className="contact-row" key={group.id}><span className={`complexity complexity-${group.semaphore_color}`}><span className="complexity-dot" /></span><span className="member-avatar">{group.family_label.charAt(0).toUpperCase()}</span><div className="member-info"><strong>{group.family_label}</strong><small>{group.responsible_name}{group.responsible_email ? ` · ${group.responsible_email}` : ''}{group.responsible_phone ? ` · ${group.responsible_phone}` : ''}</small><small>{group.estimated_adults} adulto(s), {group.estimated_children} niño(s){group.member_count ? ` · ${group.member_count} detalle(s) agregado(s)` : ''}</small>{group.notes && <small>{group.notes}</small>}</div>{group.owner_email && <span className="owner-label">{group.owner_email}</span>}<button className="icon-button quiet" title="Editar familia" aria-label={`Editar ${group.family_label}`} onClick={() => { setEditingGroup(group); setGroupFormOpen(true) }}><Pencil size={15} /></button><button className="icon-button quiet" title="Eliminar familia" aria-label={`Eliminar ${group.family_label}`} onClick={() => deleteFamilyGroup(group)}><Trash2 size={15} /></button></article>) : <div className="empty-state"><div className="empty-mark"><Users size={22} /></div><h2>El roster está vacío</h2><p>Agrega familias con su responsable y conteos estimados; los detalles finos son opcionales.</p><button className="button button-primary" onClick={() => setGroupFormOpen(true)}><Plus size={15} /> Agregar familia</button></div>}</section>
           </>}
 
           {view === 'admin' && user.role === 'admin' && <>

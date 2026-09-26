@@ -505,18 +505,24 @@ function publicAuthRoutes(PDO $db, string $path, string $method): bool
             respond(['error' => 'Esta invitación no existe o expiró.'], 404);
         }
         $query = $db->prepare(
-            'SELECT i.guest_name, i.status, i.response_expires_at, e.event_name, e.event_date
-             FROM event_invitations i JOIN events e ON e.id = i.event_id
+            'SELECT i.family_label, i.responsible_name, i.estimated_adults, i.estimated_children,
+                    i.actual_adults, i.actual_children, i.status, i.response_expires_at,
+                    e.event_name, e.event_date
+             FROM event_family_invites i JOIN events e ON e.id = i.event_id
              WHERE i.response_token_hash = :hash AND i.revoked_at IS NULL
                AND i.response_expires_at > CURRENT_TIMESTAMP LIMIT 1'
         );
         $query->execute(['hash' => hash('sha256', $token)]);
         unset($token);
-        $invitation = $query->fetch();
-        if (!$invitation) {
+        $invite = $query->fetch();
+        if (!$invite) {
             respond(['error' => 'Esta invitación no existe o expiró.'], 404);
         }
-        respond(['data' => $invitation]);
+        $invite['estimated_adults'] = (int)$invite['estimated_adults'];
+        $invite['estimated_children'] = (int)$invite['estimated_children'];
+        $invite['actual_adults'] = $invite['actual_adults'] === null ? null : (int)$invite['actual_adults'];
+        $invite['actual_children'] = $invite['actual_children'] === null ? null : (int)$invite['actual_children'];
+        respond(['data' => $invite]);
     }
 
     if ($path === '/rsvp/respond' && $method === 'POST') {
@@ -534,20 +540,40 @@ function publicAuthRoutes(PDO $db, string $path, string $method): bool
         enforceAuthRateLimit($db, $rateKey);
         recordAuthFailure($db, $rateKey);
         $validToken = $db->prepare(
-            'SELECT id FROM event_invitations
+            'SELECT id, estimated_adults, estimated_children FROM event_family_invites
              WHERE response_token_hash = :hash AND revoked_at IS NULL
                AND response_expires_at > CURRENT_TIMESTAMP LIMIT 1'
         );
         $validToken->execute(['hash' => hash('sha256', $token)]);
-        $invitationId = $validToken->fetchColumn();
+        $invite = $validToken->fetch();
         unset($token);
-        if (!$invitationId) {
+        if (!$invite) {
             respond(['error' => 'Esta invitación no existe o expiró.'], 404);
         }
+        // The family's point of contact may adjust the real headcount when
+        // responding (e.g. "actually only 3 of us are coming"); default to the
+        // estimate the organizer already has if they don't provide one.
+        $actualAdults = $status === 'accepted'
+            ? filter_var($data['actual_adults'] ?? $invite['estimated_adults'], FILTER_VALIDATE_INT)
+            : 0;
+        $actualChildren = $status === 'accepted'
+            ? filter_var($data['actual_children'] ?? $invite['estimated_children'], FILTER_VALIDATE_INT)
+            : 0;
+        if ($actualAdults === false || $actualAdults < 0 || $actualAdults > 1000
+            || $actualChildren === false || $actualChildren < 0 || $actualChildren > 1000) {
+            respond(['error' => 'Los conteos reales deben ser números entre 0 y 1000.'], 422);
+        }
         $update = $db->prepare(
-            'UPDATE event_invitations SET status = :status, responded_at = CURRENT_TIMESTAMP WHERE id = :id'
+            'UPDATE event_family_invites
+             SET status = :status, actual_adults = :adults, actual_children = :children, responded_at = CURRENT_TIMESTAMP
+             WHERE id = :id'
         );
-        $update->execute(['status' => $status, 'id' => $invitationId]);
+        $update->execute([
+            'status' => $status,
+            'adults' => $actualAdults,
+            'children' => $actualChildren,
+            'id' => $invite['id'],
+        ]);
         respond(['message' => 'Respuesta guardada.']);
     }
 

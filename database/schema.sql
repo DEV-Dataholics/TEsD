@@ -105,35 +105,62 @@ CREATE TABLE IF NOT EXISTS family_members (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS contacts (
+-- Reusable roster: a family card owned by a user, invitable to any of their events.
+-- Details beyond the responsible contact and headcounts are intentionally optional
+-- ("flimsy") — organizers may know only "family of 4, 2 adults, 2 kids" and add
+-- names/restrictions later via family_group_members.
+CREATE TABLE IF NOT EXISTS family_groups (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_id BIGINT UNSIGNED NOT NULL,
-    source_legacy_member_id BIGINT UNSIGNED NULL,
-    name VARCHAR(160) NOT NULL,
-    email VARCHAR(254) NULL,
+    family_label VARCHAR(160) NOT NULL,
+    responsible_name VARCHAR(160) NOT NULL,
+    responsible_email VARCHAR(254) NULL,
+    responsible_phone VARCHAR(40) NULL,
+    estimated_adults SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    estimated_children SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    notes TEXT NULL,
+    source_legacy_family_id BIGINT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_family_groups_legacy (source_legacy_family_id),
+    KEY idx_family_groups_user (user_id, family_label),
+    CONSTRAINT fk_family_groups_user FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_family_groups_legacy FOREIGN KEY (source_legacy_family_id) REFERENCES families (id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Optional, named detail for a family_group. Never required to create or invite a family.
+CREATE TABLE IF NOT EXISTS family_group_members (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    family_group_id BIGINT UNSIGNED NOT NULL,
+    name VARCHAR(160) NULL,
     age TINYINT UNSIGNED NULL,
     type ENUM('adult', 'child') NOT NULL DEFAULT 'adult',
     dietary_restrictions TEXT NULL,
     notes TEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_contacts_legacy_member (source_legacy_member_id),
-    KEY idx_contacts_user_name (user_id, name),
-    KEY idx_contacts_user_email (user_id, email),
-    CONSTRAINT fk_contacts_user FOREIGN KEY (user_id) REFERENCES users (id)
-        ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT fk_contacts_legacy_member FOREIGN KEY (source_legacy_member_id) REFERENCES family_members (id)
-        ON DELETE SET NULL ON UPDATE CASCADE
+    KEY idx_family_group_members_group (family_group_id),
+    CONSTRAINT fk_family_group_members_group FOREIGN KEY (family_group_id) REFERENCES family_groups (id)
+        ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS event_invitations (
+-- Join between an event and a family_group, plus the family-level RSVP link.
+-- Snapshots the contact/headcount at invite time so history survives roster edits.
+CREATE TABLE IF NOT EXISTS event_family_invites (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     event_id BIGINT UNSIGNED NOT NULL,
-    contact_id BIGINT UNSIGNED NULL,
-    legacy_family_id BIGINT UNSIGNED NULL,
-    guest_name VARCHAR(160) NOT NULL,
-    guest_email VARCHAR(254) NULL,
+    family_group_id BIGINT UNSIGNED NULL,
+    family_label VARCHAR(160) NOT NULL,
+    responsible_name VARCHAR(160) NOT NULL,
+    responsible_email VARCHAR(254) NULL,
+    responsible_phone VARCHAR(40) NULL,
+    estimated_adults SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    estimated_children SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    actual_adults SMALLINT UNSIGNED NULL,
+    actual_children SMALLINT UNSIGNED NULL,
     status ENUM('pending', 'accepted', 'declined') NOT NULL DEFAULT 'pending',
     response_token_hash CHAR(64) NULL,
     response_expires_at DATETIME NULL,
@@ -142,15 +169,12 @@ CREATE TABLE IF NOT EXISTS event_invitations (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_event_invitation_guest (event_id, contact_id),
-    UNIQUE KEY uq_event_invitation_token (response_token_hash),
-    KEY idx_event_invitations_status (event_id, status),
-    KEY idx_event_invitations_contact (contact_id),
-    CONSTRAINT fk_event_invitations_event FOREIGN KEY (event_id) REFERENCES events (id)
+    UNIQUE KEY uq_event_family_invite (event_id, family_group_id),
+    UNIQUE KEY uq_event_family_invite_token (response_token_hash),
+    KEY idx_event_family_invites_status (event_id, status),
+    CONSTRAINT fk_event_family_invites_event FOREIGN KEY (event_id) REFERENCES events (id)
         ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT fk_event_invitations_contact FOREIGN KEY (contact_id) REFERENCES contacts (id)
-        ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT fk_event_invitations_legacy_family FOREIGN KEY (legacy_family_id) REFERENCES families (id)
+    CONSTRAINT fk_event_family_invites_group FOREIGN KEY (family_group_id) REFERENCES family_groups (id)
         ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
