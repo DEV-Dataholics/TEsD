@@ -61,6 +61,85 @@ function cleanMember($member): array
     ];
 }
 
+const EVENT_FACILITY_OPTIONS = [
+    'speaker', 'ice_boxes', 'fridge', 'coal_grill', 'gas_grill', 'pool',
+    'parking', 'wifi', 'tables_chairs', 'restrooms',
+];
+
+function validatedEventDetails(array $data, array $current = []): array
+{
+    $name = trim((string)($data['event_name'] ?? $current['event_name'] ?? ''));
+    if ($name === '' || mb_strlen($name) > 160) {
+        throw new InvalidArgumentException('El nombre del evento es obligatorio y debe tener máximo 160 caracteres.');
+    }
+
+    $date = array_key_exists('event_date', $data) ? trim((string)$data['event_date']) : (string)($current['event_date'] ?? '');
+    if ($date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        throw new InvalidArgumentException('event_date debe tener formato YYYY-MM-DD.');
+    }
+
+    $time = array_key_exists('event_time', $data) ? trim((string)$data['event_time']) : (string)($current['event_time'] ?? '');
+    if ($time !== '' && !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $time)) {
+        throw new InvalidArgumentException('event_time debe tener formato HH:MM.');
+    }
+
+    $theme = trim((string)($data['theme'] ?? $current['theme'] ?? ''));
+    if (mb_strlen($theme) > 160) {
+        throw new InvalidArgumentException('El tema debe tener máximo 160 caracteres.');
+    }
+
+    $venueName = trim((string)($data['venue_name'] ?? $current['venue_name'] ?? ''));
+    if (mb_strlen($venueName) > 160) {
+        throw new InvalidArgumentException('El nombre del lugar debe tener máximo 160 caracteres.');
+    }
+
+    $venueAddress = trim((string)($data['venue_address'] ?? $current['venue_address'] ?? ''));
+    if (mb_strlen($venueAddress) > 300) {
+        throw new InvalidArgumentException('La dirección debe tener máximo 300 caracteres.');
+    }
+
+    // Host-only fields below: never exposed on the public RSVP page.
+    $capacityValue = $data['venue_capacity'] ?? $current['venue_capacity'] ?? null;
+    $capacity = ($capacityValue === '' || $capacityValue === null) ? null : filter_var($capacityValue, FILTER_VALIDATE_INT);
+    if ($capacityValue !== '' && $capacityValue !== null && ($capacity === false || $capacity < 0 || $capacity > 100000)) {
+        throw new InvalidArgumentException('El aforo debe ser un número entre 0 y 100000.');
+    }
+
+    $facilitiesInput = array_key_exists('venue_facilities', $data) ? $data['venue_facilities'] : ($current['venue_facilities'] ?? []);
+    if (!is_array($facilitiesInput)) {
+        throw new InvalidArgumentException('venue_facilities debe ser una lista.');
+    }
+    $facilities = [];
+    foreach ($facilitiesInput as $facility) {
+        $facility = trim((string)$facility);
+        if ($facility === '' || mb_strlen($facility) > 60) {
+            continue;
+        }
+        $facilities[] = $facility;
+    }
+    $facilities = array_values(array_unique($facilities));
+    if (count($facilities) > 30) {
+        throw new InvalidArgumentException('Se permiten máximo 30 elementos en las instalaciones del lugar.');
+    }
+
+    $hostNotes = trim((string)($data['host_notes'] ?? $current['host_notes'] ?? ''));
+    if (mb_strlen($hostNotes) > 2000) {
+        throw new InvalidArgumentException('Las notas para el organizador deben tener máximo 2000 caracteres.');
+    }
+
+    return [
+        'event_name' => $name,
+        'event_date' => $date ?: null,
+        'event_time' => $time ?: null,
+        'theme' => $theme ?: null,
+        'venue_name' => $venueName ?: null,
+        'venue_address' => $venueAddress ?: null,
+        'venue_capacity' => $capacity,
+        'venue_facilities' => $facilities,
+        'host_notes' => $hostNotes ?: null,
+    ];
+}
+
 function complexityColor(array $members): string
 {
     $signals = 0;
@@ -357,15 +436,17 @@ try {
     }
 
     if ($path === '/events' && $method === 'GET') {
+        $eventFields = 'e.id, e.owner_user_id, e.event_name, e.event_date, e.event_time, e.theme,
+                        e.venue_name, e.venue_address, e.venue_capacity, e.venue_facilities, e.host_notes';
         if ($user['role'] === 'admin') {
             auditAdminAction($db, $user, 'list_all_events', 'event', null);
             $events = $db->query(
-                'SELECT e.id, e.owner_user_id, e.event_name, e.event_date, u.email AS owner_email
-                 FROM events e JOIN users u ON u.id = e.owner_user_id ORDER BY e.event_date, e.id'
+                "SELECT {$eventFields}, u.email AS owner_email
+                 FROM events e JOIN users u ON u.id = e.owner_user_id ORDER BY e.event_date, e.id"
             )->fetchAll();
         } else {
             $query = $db->prepare(
-                'SELECT id, owner_user_id, event_name, event_date FROM events WHERE owner_user_id = :owner ORDER BY event_date, id'
+                "SELECT {$eventFields} FROM events e WHERE e.owner_user_id = :owner ORDER BY e.event_date, e.id"
             );
             $query->execute(['owner' => $user['id']]);
             $events = $query->fetchAll();
@@ -373,43 +454,60 @@ try {
         foreach ($events as &$event) {
             $event['id'] = (int)$event['id'];
             $event['owner_user_id'] = (int)$event['owner_user_id'];
+            $event['venue_capacity'] = $event['venue_capacity'] === null ? null : (int)$event['venue_capacity'];
+            $event['venue_facilities'] = $event['venue_facilities'] ? json_decode($event['venue_facilities'], true) : [];
         }
         unset($event);
         respond(['data' => $events]);
     }
 
     if ($path === '/events' && $method === 'POST') {
-        $data = requestData();
-        $name = trim((string)($data['event_name'] ?? ''));
-        $date = trim((string)($data['event_date'] ?? ''));
-        if ($name === '' || mb_strlen($name) > 160) {
-            throw new InvalidArgumentException('El nombre del evento es obligatorio y debe tener máximo 160 caracteres.');
-        }
-        if ($date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            throw new InvalidArgumentException('event_date debe tener formato YYYY-MM-DD.');
-        }
+        $event = validatedEventDetails(requestData());
         $insert = $db->prepare(
-            'INSERT INTO events (owner_user_id, event_name, event_date) VALUES (:owner, :name, :date)'
+            'INSERT INTO events (owner_user_id, event_name, event_date, event_time, theme,
+                                 venue_name, venue_address, venue_capacity, venue_facilities, host_notes)
+             VALUES (:owner, :name, :date, :time, :theme, :venue_name, :venue_address, :capacity, :facilities, :host_notes)'
         );
-        $insert->execute(['owner' => $user['id'], 'name' => $name, 'date' => $date !== '' ? $date : null]);
-        respond(['data' => ['id' => (int)$db->lastInsertId(), 'event_name' => $name, 'event_date' => $date ?: null]], 201);
+        $insert->execute([
+            'owner' => $user['id'],
+            'name' => $event['event_name'],
+            'date' => $event['event_date'],
+            'time' => $event['event_time'],
+            'theme' => $event['theme'],
+            'venue_name' => $event['venue_name'],
+            'venue_address' => $event['venue_address'],
+            'capacity' => $event['venue_capacity'],
+            'facilities' => json_encode($event['venue_facilities'], JSON_UNESCAPED_UNICODE),
+            'host_notes' => $event['host_notes'],
+        ]);
+        $event['id'] = (int)$db->lastInsertId();
+        respond(['data' => $event], 201);
     }
 
     if (preg_match('#^/events/(\d+)$#', $path, $matches) && $method === 'PATCH') {
         $eventId = (int)$matches[1];
-        $event = requireEventAccess($db, $user, $eventId, 'update');
-        $data = requestData();
-        $name = trim((string)($data['event_name'] ?? $event['event_name']));
-        $date = array_key_exists('event_date', $data) ? trim((string)$data['event_date']) : (string)($event['event_date'] ?? '');
-        if ($name === '' || mb_strlen($name) > 160) {
-            throw new InvalidArgumentException('El nombre del evento es obligatorio y debe tener máximo 160 caracteres.');
-        }
-        if ($date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            throw new InvalidArgumentException('event_date debe tener formato YYYY-MM-DD.');
-        }
-        $update = $db->prepare('UPDATE events SET event_name = :name, event_date = :date WHERE id = :id');
-        $update->execute(['name' => $name, 'date' => $date !== '' ? $date : null, 'id' => $eventId]);
-        respond(['data' => ['id' => $eventId, 'event_name' => $name, 'event_date' => $date ?: null]]);
+        $current = requireEventAccess($db, $user, $eventId, 'update');
+        $current['venue_facilities'] = $current['venue_facilities'] ? (json_decode((string)$current['venue_facilities'], true) ?: []) : [];
+        $event = validatedEventDetails(requestData(), $current);
+        $update = $db->prepare(
+            'UPDATE events SET event_name = :name, event_date = :date, event_time = :time, theme = :theme,
+                    venue_name = :venue_name, venue_address = :venue_address, venue_capacity = :capacity,
+                    venue_facilities = :facilities, host_notes = :host_notes WHERE id = :id'
+        );
+        $update->execute([
+            'name' => $event['event_name'],
+            'date' => $event['event_date'],
+            'time' => $event['event_time'],
+            'theme' => $event['theme'],
+            'venue_name' => $event['venue_name'],
+            'venue_address' => $event['venue_address'],
+            'capacity' => $event['venue_capacity'],
+            'facilities' => json_encode($event['venue_facilities'], JSON_UNESCAPED_UNICODE),
+            'host_notes' => $event['host_notes'],
+            'id' => $eventId,
+        ]);
+        $event['id'] = $eventId;
+        respond(['data' => $event]);
     }
 
     if (preg_match('#^/events/(\d+)$#', $path, $matches) && $method === 'DELETE') {

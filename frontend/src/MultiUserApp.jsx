@@ -47,6 +47,11 @@ async function post(path, data, csrfToken = '') {
   return apiRequest(path, { method: 'POST', body: data }, csrfToken)
 }
 
+function formatTime(value) {
+  if (!value) return ''
+  return value.length > 5 ? value.slice(0, 5) : value
+}
+
 function AuthScreen({ onAction, notice, resetToken }) {
   const [mode, setMode] = useState(resetToken ? 'reset' : 'login')
   const [busy, setBusy] = useState(false)
@@ -164,7 +169,9 @@ function RsvpPage({ token }) {
         {error && <p className="form-error" role="alert">{error}</p>}
         {invite ? <>
           <h1>Hola, {invite.responsible_name}.</h1>
-          <p className="login-copy">La familia <strong>{invite.family_label}</strong> está invitada a <strong>{invite.event_name}</strong>{invite.event_date ? ` · ${invite.event_date}` : ''}.</p>
+          <p className="login-copy">La familia <strong>{invite.family_label}</strong> está invitada a <strong>{invite.event_name}</strong>{invite.event_date ? ` · ${invite.event_date}` : ''}{invite.event_time ? ` · ${formatTime(invite.event_time)}` : ''}.</p>
+          {invite.theme && <p className="rsvp-detail"><strong>Tema:</strong> {invite.theme}</p>}
+          {(invite.venue_name || invite.venue_address) && <p className="rsvp-detail"><strong>Lugar:</strong> {[invite.venue_name, invite.venue_address].filter(Boolean).join(' · ')}</p>}
           <p className="rsvp-current">{message || (invite.status === 'pending' ? '¿Nos acompañan? Ajusta cuántos son si hace falta.' : invite.status === 'accepted' ? `Su respuesta: asistirán ${invite.actual_adults} adulto(s) y ${invite.actual_children} niño(s).` : 'Su respuesta: no podrán asistir.')}</p>
           {invite.status !== 'declined' && <div className="contact-form-row rsvp-count-row">
             <label className="field"><span>Adultos que asistirán</span><input type="number" min="0" max="1000" value={adults} onChange={(event) => setAdults(Number(event.target.value))} /></label>
@@ -180,15 +187,77 @@ function RsvpPage({ token }) {
   )
 }
 
+const EVENT_FACILITY_OPTIONS = [
+  { key: 'speaker', label: 'Bocina / equipo de sonido' },
+  { key: 'ice_boxes', label: 'Hieleras' },
+  { key: 'fridge', label: 'Refrigerador' },
+  { key: 'coal_grill', label: 'Asador de carbón' },
+  { key: 'gas_grill', label: 'Asador de gas' },
+  { key: 'pool', label: 'Alberca' },
+  { key: 'parking', label: 'Estacionamiento' },
+  { key: 'wifi', label: 'Wifi' },
+  { key: 'tables_chairs', label: 'Mesas y sillas' },
+  { key: 'restrooms', label: 'Baños' },
+]
+
 function EventForm({ event, onSave, onCancel, busy }) {
+  const [facilities, setFacilities] = useState(() => new Set(event?.venue_facilities || []))
+  const knownKeys = EVENT_FACILITY_OPTIONS.map((option) => option.key)
+  const [otherFacilities, setOtherFacilities] = useState(() => (event?.venue_facilities || []).filter((facility) => !knownKeys.includes(facility)).join(', '))
+
+  function toggleFacility(key) {
+    setFacilities((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   return (
-    <form className="inline-create-form" onSubmit={(event) => {
-      event.preventDefault()
-      const data = new FormData(event.currentTarget)
-      onSave({ event_name: data.get('event_name'), event_date: data.get('event_date') || null })
+    <form className="inline-create-form event-form" onSubmit={(submitEvent) => {
+      submitEvent.preventDefault()
+      const data = Object.fromEntries(new FormData(submitEvent.currentTarget).entries())
+      const extras = otherFacilities.split(',').map((item) => item.trim()).filter(Boolean)
+      onSave({
+        event_name: data.event_name,
+        event_date: data.event_date || null,
+        event_time: data.event_time || null,
+        theme: data.theme || null,
+        venue_name: data.venue_name || null,
+        venue_address: data.venue_address || null,
+        venue_capacity: data.venue_capacity || null,
+        venue_facilities: [...facilities, ...extras],
+        host_notes: data.host_notes || null,
+      })
     }}>
       <label className="field"><span>Nombre del evento</span><input name="event_name" defaultValue={event?.event_name || ''} maxLength={160} required placeholder="Ej. Boda de Ana y Luis" /></label>
-      <label className="field"><span>Fecha</span><input name="event_date" type="date" defaultValue={event?.event_date || ''} /></label>
+      <div className="contact-form-row">
+        <label className="field"><span>Fecha</span><input name="event_date" type="date" defaultValue={event?.event_date || ''} /></label>
+        <label className="field"><span>Hora</span><input name="event_time" type="time" defaultValue={event?.event_time || ''} /></label>
+      </div>
+      <label className="field"><span>Tema (opcional)</span><input name="theme" defaultValue={event?.theme || ''} maxLength={160} placeholder="Ej. Años 80, blanco y negro…" /></label>
+      <label className="field"><span>Lugar (opcional)</span><input name="venue_name" defaultValue={event?.venue_name || ''} maxLength={160} placeholder="Ej. Salón Los Encinos" /></label>
+      <label className="field"><span>Dirección (opcional)</span><input name="venue_address" defaultValue={event?.venue_address || ''} maxLength={300} placeholder="Calle, número, colonia…" /></label>
+
+      <div className="host-only-panel">
+        <p className="host-only-label">Solo para ti (el organizador); tus invitados no ven esto</p>
+        <label className="field"><span>Aforo del lugar (opcional)</span><input name="venue_capacity" type="number" min="0" max="100000" defaultValue={event?.venue_capacity ?? ''} placeholder="Ej. 80" /></label>
+        <fieldset className="facilities-fieldset">
+          <legend>¿Con qué cuenta el lugar?</legend>
+          <div className="facilities-grid">
+            {EVENT_FACILITY_OPTIONS.map((option) => (
+              <label className="facility-option" key={option.key}>
+                <input type="checkbox" checked={facilities.has(option.key)} onChange={() => toggleFacility(option.key)} />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="field"><span>Otras instalaciones (separadas por coma)</span><input value={otherFacilities} onChange={(inputEvent) => setOtherFacilities(inputEvent.target.value)} placeholder="Ej. terraza, chapoteadero" /></label>
+        <label className="field"><span>Notas del organizador (opcional)</span><textarea name="host_notes" rows="2" defaultValue={event?.host_notes || ''} placeholder="Ej. el dueño cobra depósito, llegar 1h antes…" /></label>
+      </div>
+
       <div className="inline-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : event ? 'Guardar cambios' : 'Crear evento'} <ArrowRight size={15} /></button></div>
     </form>
   )
@@ -565,12 +634,21 @@ function Workspace({ user, csrfToken, onLogout }) {
             <section className="page-heading"><div><p className="eyebrow">TU ESPACIO</p><h1>Tus eventos,<br />a tu manera.</h1><p className="page-subtitle">Cada evento tiene su lista y sus respuestas.</p></div><button className="button button-primary" onClick={() => { setEditingEvent(null); setEventFormOpen(true) }}><Plus size={17} /> Nuevo evento</button></section>
             {eventFormOpen && <section className="management-panel"><div className="panel-title-row"><h2>Crear evento</h2><button className="icon-button quiet" onClick={() => setEventFormOpen(false)} aria-label="Cerrar"><X size={17} /></button></div><EventForm onSave={saveEvent} onCancel={() => setEventFormOpen(false)} busy={busy} /></section>}
             <section className="event-list" aria-label="Tus eventos">
-              {events.length ? events.map((event) => <button className="event-row" key={event.id} onClick={() => { setActiveEvent(event); setView('event'); setEventTab('invitations') }}><span className="event-row-icon"><CalendarDays size={19} /></span><span className="event-row-info"><strong>{event.event_name}</strong><small>{event.event_date || 'Fecha por definir'}{user.role === 'admin' && event.owner_email ? ` · ${event.owner_email}` : ''}</small></span><ChevronRight size={17} /></button>) : !eventFormOpen && <div className="empty-state"><div className="empty-mark"><CalendarDays size={22} /></div><h2>Aún no tienes eventos</h2><p>Crea un evento para invitar a tu roster.</p><button className="button button-primary" onClick={() => setEventFormOpen(true)}><Plus size={16} /> Crear evento</button></div>}
+              {events.length ? events.map((event) => <button className="event-row" key={event.id} onClick={() => { setActiveEvent(event); setView('event'); setEventTab('invitations') }}><span className="event-row-icon"><CalendarDays size={19} /></span><span className="event-row-info"><strong>{event.event_name}</strong><small>{[event.event_date || 'Fecha por definir', formatTime(event.event_time), event.venue_name].filter(Boolean).join(' · ')}{user.role === 'admin' && event.owner_email ? ` · ${event.owner_email}` : ''}</small></span><ChevronRight size={17} /></button>) : !eventFormOpen && <div className="empty-state"><div className="empty-mark"><CalendarDays size={22} /></div><h2>Aún no tienes eventos</h2><p>Crea un evento para invitar a tu roster.</p><button className="button button-primary" onClick={() => setEventFormOpen(true)}><Plus size={16} /> Crear evento</button></div>}
             </section>
           </>}
 
           {view === 'event' && activeEvent && <>
-            <section className="page-heading event-page-heading"><div><button className="back-link" onClick={() => { setView('events'); setActiveEvent(null); setEventFormOpen(false); setEditingEvent(null) }}><ArrowLeft size={15} /> Todos los eventos</button><p className="eyebrow">EVENTO</p><h1>{activeEvent.event_name}</h1><p className="page-subtitle">{activeEvent.event_date || 'Fecha por definir'} · Invitaciones y respuestas personales.</p></div><div className="event-actions"><button className="button button-secondary" onClick={() => { setEditingEvent(activeEvent); setEventFormOpen(true) }}><Pencil size={15} /> Editar</button><button className="button button-quiet" onClick={() => deleteEvent(activeEvent)}><Trash2 size={15} /> Eliminar evento</button></div></section>
+            <section className="page-heading event-page-heading"><div><button className="back-link" onClick={() => { setView('events'); setActiveEvent(null); setEventFormOpen(false); setEditingEvent(null) }}><ArrowLeft size={15} /> Todos los eventos</button><p className="eyebrow">EVENTO</p><h1>{activeEvent.event_name}</h1><p className="page-subtitle">{[activeEvent.event_date || 'Fecha por definir', formatTime(activeEvent.event_time), activeEvent.theme].filter(Boolean).join(' · ')}</p></div><div className="event-actions"><button className="button button-secondary" onClick={() => { setEditingEvent(activeEvent); setEventFormOpen(true) }}><Pencil size={15} /> Editar</button><button className="button button-quiet" onClick={() => deleteEvent(activeEvent)}><Trash2 size={15} /> Eliminar evento</button></div></section>
+            {(activeEvent.venue_name || activeEvent.venue_address || activeEvent.venue_capacity || (activeEvent.venue_facilities && activeEvent.venue_facilities.length) || activeEvent.host_notes) && <section className="event-details-panel">
+              {(activeEvent.venue_name || activeEvent.venue_address) && <p><strong>Lugar:</strong> {[activeEvent.venue_name, activeEvent.venue_address].filter(Boolean).join(' · ')}</p>}
+              {(activeEvent.venue_capacity || (activeEvent.venue_facilities && activeEvent.venue_facilities.length) || activeEvent.host_notes) && <div className="host-only-panel host-only-summary">
+                <p className="host-only-label">Solo para ti (el organizador)</p>
+                {activeEvent.venue_capacity ? <p><strong>Aforo:</strong> {activeEvent.venue_capacity} personas</p> : null}
+                {activeEvent.venue_facilities && activeEvent.venue_facilities.length ? <p><strong>Instalaciones:</strong> {activeEvent.venue_facilities.map((key) => EVENT_FACILITY_OPTIONS.find((option) => option.key === key)?.label || key).join(', ')}</p> : null}
+                {activeEvent.host_notes ? <p><strong>Notas:</strong> {activeEvent.host_notes}</p> : null}
+              </div>}
+            </section>}
             {eventFormOpen && <section className="management-panel"><div className="panel-title-row"><h2>Editar evento</h2><button className="icon-button quiet" onClick={() => { setEventFormOpen(false); setEditingEvent(null) }} aria-label="Cerrar"><X size={17} /></button></div><EventForm event={editingEvent} onSave={saveEvent} onCancel={() => { setEventFormOpen(false); setEditingEvent(null) }} busy={busy} /></section>}
             <section className="stats-row"><div className="stat-block"><span>Familias</span><strong>{familyInvites.length.toString().padStart(2, '0')}</strong><small>invitadas</small></div><div className="stat-block"><span>Personas estimadas</span><strong>{estimatedGuests.toString().padStart(2, '0')}</strong><small>al confirmar todos</small></div><div className="stat-block stat-accent"><span>Confirmados</span><strong>{confirmedGuests.toString().padStart(2, '0')}</strong><small>personas asistirán</small></div><div className="stat-block"><span>Pendientes</span><strong>{pendingCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div><div className="stat-block"><span>Declinaron</span><strong>{declinedCount.toString().padStart(2, '0')}</strong><small>respuestas</small></div></section>
             <div className="management-tabs" role="tablist"><button className={eventTab === 'invitations' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('invitations')} role="tab" aria-selected={eventTab === 'invitations'}>Familias invitadas <span>{familyInvites.length}</span></button><button className={eventTab === 'families' ? 'management-tab active' : 'management-tab'} onClick={() => setEventTab('families')} role="tab" aria-selected={eventTab === 'families'}>Lista familiar histórica <span>{families.length}</span></button></div>

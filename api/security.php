@@ -152,7 +152,8 @@ function auditAdminAction(PDO $db, array $user, string $action, string $targetTy
 function requireEventAccess(PDO $db, array $user, int $eventId, string $action = 'read'): array
 {
     $query = $db->prepare(
-        'SELECT id, owner_user_id, event_name, event_date
+        'SELECT id, owner_user_id, event_name, event_date, event_time, theme,
+                venue_name, venue_address, venue_capacity, venue_facilities, host_notes
          FROM events WHERE id = :id LIMIT 1'
     );
     $query->execute(['id' => $eventId]);
@@ -507,7 +508,7 @@ function publicAuthRoutes(PDO $db, string $path, string $method): bool
         $query = $db->prepare(
             'SELECT i.family_label, i.responsible_name, i.estimated_adults, i.estimated_children,
                     i.actual_adults, i.actual_children, i.status, i.response_expires_at,
-                    e.event_name, e.event_date
+                    e.event_name, e.event_date, e.event_time, e.theme, e.venue_name, e.venue_address
              FROM event_family_invites i JOIN events e ON e.id = i.event_id
              WHERE i.response_token_hash = :hash AND i.revoked_at IS NULL
                AND i.response_expires_at > CURRENT_TIMESTAMP LIMIT 1'
