@@ -269,6 +269,13 @@ h1, h2, h3, p { margin-top: 0; }
 .count-adjust { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; font-size: 9px; color: #8b9894; }
 .count-adjust input { width: 44px; min-height: 31px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: #263c37; background: #fff; font: inherit; font-size: 11px; text-align: center; }
 .rsvp-count-row { margin: 4px 0; }
+.member-accordion { grid-column: 1 / -1; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--soft-line); border-radius: 4px; background: #f7faf8; }
+.member-accordion-hint { margin: 0 0 2px; color: #8b9894; font-size: 9px; font-weight: 600; }
+.member-row { border: 1px solid var(--soft-line); border-radius: 3px; background: #fff; }
+.member-row-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 10px; border: 0; background: transparent; color: #263c37; font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.member-row-header .chevron { transition: transform .15s ease; }
+.member-row-header .chevron-open { transform: rotate(90deg); }
+.member-row-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 10px 10px; }
 .login-side { position: relative; display: flex; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 55px 30px; color: #eaf3ed; background-color: var(--deep); background-image: radial-gradient(ellipse at 25% 20%, rgba(100, 157, 125, .25), transparent 43%), repeating-linear-gradient(135deg, transparent 0 33px, rgba(255,255,255,.025) 34px 35px); }
 .side-kicker { position: absolute; top: 42px; left: 44px; color: #9cbcaf; font-size: 10px; font-weight: 700; }
 .login-side > p { position: relative; margin: 20px 0 0; color: #e6f1e9; font-family: 'Fraunces', Georgia, serif; font-size: 26px; line-height: 1.25; text-align: center; }

@@ -194,21 +194,124 @@ function EventForm({ event, onSave, onCancel, busy }) {
   )
 }
 
-function FamilyGroupForm({ group, onSave, onCancel, busy }) {
+function emptyMember(type) {
+  return { id: null, type, name: '', age: '', dietary_restrictions: '', notes: '', expanded: false }
+}
+
+function resizeMemberList(list, size, type, onRemoved) {
+  if (size < list.length) {
+    const removed = list.slice(size).filter((member) => member.id)
+    if (removed.length && onRemoved) onRemoved(removed.map((member) => member.id))
+    return list.slice(0, size)
+  }
+  const next = list.slice()
+  while (next.length < size) next.push(emptyMember(type))
+  return next
+}
+
+function MemberAccordionRow({ label, member, onToggle, onChange }) {
+  const title = member.name.trim() || label
+  return (
+    <div className="member-row">
+      <button type="button" className="member-row-header" onClick={onToggle}>
+        <ChevronRight size={14} className={member.expanded ? 'chevron chevron-open' : 'chevron'} />
+        <span>{title}</span>
+      </button>
+      {member.expanded && <div className="member-row-body">
+        <label className="field"><span>Nombre (opcional)</span><input value={member.name} maxLength={160} placeholder={label} onChange={(event) => onChange('name', event.target.value)} /></label>
+        <label className="field"><span>Edad (opcional)</span><input type="number" min="0" max="120" value={member.age} onChange={(event) => onChange('age', event.target.value)} /></label>
+        <label className="field"><span>Restricciones (opcional)</span><input value={member.dietary_restrictions} maxLength={300} placeholder="Ej. vegetariano" onChange={(event) => onChange('dietary_restrictions', event.target.value)} /></label>
+        <label className="field"><span>Notas (opcional)</span><input value={member.notes} maxLength={300} onChange={(event) => onChange('notes', event.target.value)} /></label>
+      </div>}
+    </div>
+  )
+}
+
+function FamilyGroupForm({ group, onSave, onCancel, busy, loadMembers }) {
+  const [adults, setAdults] = useState(group?.estimated_adults ?? 1)
+  const [children, setChildren] = useState(group?.estimated_children ?? 0)
+  const [adultMembers, setAdultMembers] = useState(() => resizeMemberList([], group?.estimated_adults ?? 1, 'adult'))
+  const [childMembers, setChildMembers] = useState(() => resizeMemberList([], group?.estimated_children ?? 0, 'child'))
+  const [removedMemberIds, setRemovedMemberIds] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    async function bootstrap() {
+      if (!group?.id || !loadMembers) return
+      try {
+        const existing = await loadMembers(group.id)
+        if (cancelled) return
+        const shape = (member) => ({ id: member.id, type: member.type, name: member.name || '', age: member.age === null || member.age === undefined ? '' : String(member.age), dietary_restrictions: member.dietary_restrictions || '', notes: member.notes || '', expanded: false })
+        const existingAdults = existing.filter((member) => member.type === 'adult').map(shape)
+        const existingChildren = existing.filter((member) => member.type === 'child').map(shape)
+        setAdultMembers(resizeMemberList(existingAdults, adults, 'adult'))
+        setChildMembers(resizeMemberList(existingChildren, children, 'child'))
+      } catch {
+        // Keep the empty accordion slots if members fail to load; details stay optional.
+      }
+    }
+    bootstrap()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group?.id])
+
+  function updateAdults(value) {
+    const count = Math.max(0, Math.min(100, Number(value) || 0))
+    setAdults(count)
+    setAdultMembers((prev) => resizeMemberList(prev, count, 'adult', (ids) => setRemovedMemberIds((current) => [...current, ...ids])))
+  }
+
+  function updateChildren(value) {
+    const count = Math.max(0, Math.min(100, Number(value) || 0))
+    setChildren(count)
+    setChildMembers((prev) => resizeMemberList(prev, count, 'child', (ids) => setRemovedMemberIds((current) => [...current, ...ids])))
+  }
+
+  function toggleMember(setList, index) {
+    setList((prev) => prev.map((member, i) => (i === index ? { ...member, expanded: !member.expanded } : member)))
+  }
+
+  function changeMember(setList, index, field, value) {
+    setList((prev) => prev.map((member, i) => (i === index ? { ...member, [field]: value } : member)))
+  }
+
   return (
     <form className="contact-form" onSubmit={(event) => {
       event.preventDefault()
       const data = Object.fromEntries(new FormData(event.currentTarget).entries())
-      onSave(data)
+      const finalRemoved = removedMemberIds.slice()
+      const members = []
+      for (const member of [...adultMembers, ...childMembers]) {
+        const name = member.name.trim()
+        if (name === '') {
+          if (member.id) finalRemoved.push(member.id)
+          continue
+        }
+        members.push({ id: member.id, type: member.type, name, age: member.age === '' ? '' : member.age, dietary_restrictions: member.dietary_restrictions, notes: member.notes })
+      }
+      onSave({ ...data, estimated_adults: adults, estimated_children: children, members, removedMemberIds: finalRemoved })
     }}>
       <label className="field"><span>Nombre de la familia</span><input name="family_label" defaultValue={group?.family_label || ''} required maxLength={160} placeholder="Ej. Familia Gutiérrez" /></label>
       <label className="field"><span>Punto de contacto responsable</span><input name="responsible_name" defaultValue={group?.responsible_name || ''} required maxLength={160} placeholder="Ej. Gustavo Gutiérrez" /></label>
       <label className="field"><span>Correo del responsable (opcional)</span><input name="responsible_email" type="email" defaultValue={group?.responsible_email || ''} maxLength={254} /></label>
       <label className="field"><span>Teléfono del responsable (opcional)</span><input name="responsible_phone" defaultValue={group?.responsible_phone || ''} maxLength={40} /></label>
       <div className="contact-form-row">
-        <label className="field"><span>Adultos estimados</span><input name="estimated_adults" type="number" min="0" max="100" defaultValue={group?.estimated_adults ?? 1} required /></label>
-        <label className="field"><span>Niños estimados</span><input name="estimated_children" type="number" min="0" max="100" defaultValue={group?.estimated_children ?? 0} required /></label>
+        <label className="field"><span>Adultos estimados</span><input type="number" min="0" max="100" value={adults} required onChange={(event) => updateAdults(event.target.value)} /></label>
+        <label className="field"><span>Niños estimados</span><input type="number" min="0" max="100" value={children} required onChange={(event) => updateChildren(event.target.value)} /></label>
       </div>
+      {(adultMembers.length > 0 || childMembers.length > 0) && <div className="member-accordion">
+        <p className="member-accordion-hint">Detalles por persona (opcional). Déjalos vacíos si no los recuerdas.</p>
+        {adultMembers.map((member, index) => (
+          <MemberAccordionRow key={`adult-${index}`} label={`Adulto ${index + 1}`} member={member}
+            onToggle={() => toggleMember(setAdultMembers, index)}
+            onChange={(field, value) => changeMember(setAdultMembers, index, field, value)} />
+        ))}
+        {childMembers.map((member, index) => (
+          <MemberAccordionRow key={`child-${index}`} label={`Niño ${index + 1}`} member={member}
+            onToggle={() => toggleMember(setChildMembers, index)}
+            onChange={(field, value) => changeMember(setChildMembers, index, field, value)} />
+        ))}
+      </div>}
       <label className="field"><span>Notas (opcional; restricciones, detalles sueltos)</span><textarea name="notes" rows="2" defaultValue={group?.notes || ''} placeholder="Ej. no recuerdo la edad de sus hijos" /></label>
       <div className="inline-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : group ? 'Guardar cambios' : 'Guardar familia'}</button></div>
     </form>
@@ -283,13 +386,32 @@ function Workspace({ user, csrfToken, onLogout }) {
     }
   }
 
+  async function loadFamilyGroupMembers(groupId) {
+    const result = await apiRequest(`/family-groups/${groupId}/members`)
+    return result.data || []
+  }
+
   async function saveFamilyGroup(data) {
     setBusy(true)
     try {
+      const { members = [], removedMemberIds = [], ...groupData } = data
+      let groupId = editingGroup?.id
       if (editingGroup) {
-        await apiRequest(`/family-groups/${editingGroup.id}`, { method: 'PATCH', body: data }, csrfToken)
+        await apiRequest(`/family-groups/${editingGroup.id}`, { method: 'PATCH', body: groupData }, csrfToken)
       } else {
-        await post('/family-groups', data, csrfToken)
+        const result = await post('/family-groups', groupData, csrfToken)
+        groupId = result.data.id
+      }
+      for (const memberId of removedMemberIds) {
+        await apiRequest(`/family-group-members/${memberId}`, { method: 'DELETE' }, csrfToken)
+      }
+      for (const member of members) {
+        const { id, ...memberData } = member
+        if (id) {
+          await apiRequest(`/family-group-members/${id}`, { method: 'PATCH', body: memberData }, csrfToken)
+        } else {
+          await post(`/family-groups/${groupId}/members`, memberData, csrfToken)
+        }
       }
       setGroupFormOpen(false)
       setEditingGroup(null)
@@ -464,7 +586,7 @@ function Workspace({ user, csrfToken, onLogout }) {
 
           {view === 'contacts' && <>
             <section className="page-heading"><div><p className="eyebrow">FAMILIAS</p><h1>Tu roster<br />reutilizable.</h1><p className="page-subtitle">Familias privadas de {user.display_name}, con un responsable de contacto y conteos estimados; invítalas a cualquiera de tus eventos.</p></div><button className="button button-primary" onClick={() => setGroupFormOpen(true)}><Plus size={17} /> Nueva familia</button></section>
-            {groupFormOpen && <section className="management-panel contact-create-panel"><div className="panel-title-row"><h2>{editingGroup ? 'Editar familia' : 'Agregar familia'}</h2><button className="icon-button quiet" onClick={() => { setGroupFormOpen(false); setEditingGroup(null) }} aria-label="Cerrar"><X size={17} /></button></div><FamilyGroupForm group={editingGroup} onSave={saveFamilyGroup} onCancel={() => { setGroupFormOpen(false); setEditingGroup(null) }} busy={busy} /></section>}
+            {groupFormOpen && <section className="management-panel contact-create-panel"><div className="panel-title-row"><h2>{editingGroup ? 'Editar familia' : 'Agregar familia'}</h2><button className="icon-button quiet" onClick={() => { setGroupFormOpen(false); setEditingGroup(null) }} aria-label="Cerrar"><X size={17} /></button></div><FamilyGroupForm group={editingGroup} onSave={saveFamilyGroup} onCancel={() => { setGroupFormOpen(false); setEditingGroup(null) }} busy={busy} loadMembers={loadFamilyGroupMembers} /></section>}
             <label className="search-box roster-search"><Users size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar familia o responsable" aria-label="Buscar en el roster" /></label>
             <section className="contact-list">{filteredGroups.length ? filteredGroups.map((group) => <article className="contact-row" key={group.id}><span className={`complexity complexity-${group.semaphore_color}`}><span className="complexity-dot" /></span><span className="member-avatar">{group.family_label.charAt(0).toUpperCase()}</span><div className="member-info"><strong>{group.family_label}</strong><small>{group.responsible_name}{group.responsible_email ? ` · ${group.responsible_email}` : ''}{group.responsible_phone ? ` · ${group.responsible_phone}` : ''}</small><small>{group.estimated_adults} adulto(s), {group.estimated_children} niño(s){group.member_count ? ` · ${group.member_count} detalle(s) agregado(s)` : ''}</small>{group.notes && <small>{group.notes}</small>}</div>{group.owner_email && <span className="owner-label">{group.owner_email}</span>}<button className="icon-button quiet" title="Editar familia" aria-label={`Editar ${group.family_label}`} onClick={() => { setEditingGroup(group); setGroupFormOpen(true) }}><Pencil size={15} /></button><button className="icon-button quiet" title="Eliminar familia" aria-label={`Eliminar ${group.family_label}`} onClick={() => deleteFamilyGroup(group)}><Trash2 size={15} /></button></article>) : <div className="empty-state"><div className="empty-mark"><Users size={22} /></div><h2>El roster está vacío</h2><p>Agrega familias con su responsable y conteos estimados; los detalles finos son opcionales.</p><button className="button button-primary" onClick={() => setGroupFormOpen(true)}><Plus size={15} /> Agregar familia</button></div>}</section>
           </>}
