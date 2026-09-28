@@ -24,7 +24,7 @@ Ver [database/schema.sql](../database/schema.sql) para el DDL completo. Resumen 
 | `sessions` | Sesiones activas; solo se guarda el hash del token de cookie, nunca el token en claro. |
 | `account_tokens` | Tokens de un solo uso para verificación de correo y recuperación de contraseña (hasheados, con vencimiento). |
 | `auth_rate_limits` | Límite de intentos por identificador (correo/IP) en rutas públicas sensibles. |
-| `events` | Eventos, con `owner_user_id` obligatorio — todo evento pertenece a un usuario. |
+| `events` | Eventos, con `owner_user_id` obligatorio — todo evento pertenece a un usuario. Incluye `event_date`/`event_time`/`theme`/`venue_name`/`venue_address` (visibles para el invitado en `/rsvp/lookup`) y `venue_capacity`/`venue_facilities`/`host_notes` (solo para el organizador; nunca se exponen en rutas públicas). |
 | `contacts` | Roster reutilizable de personas por usuario, independiente de cualquier evento. |
 | `event_invitations` | Invitaciones por evento y contacto, con token de respuesta hasheado y vencimiento. |
 | `families` / `family_members` | Tablas históricas del sistema anterior (listas familiares sin cuentas); se conservan para no perder datos de producción. |

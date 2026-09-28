@@ -21,9 +21,10 @@ Esta guía es para cualquier persona con una cuenta en **Tu evento, en orden** (
 ## 3. Crear y administrar tus eventos
 
 1. Desde el panel principal, pulsa **Nuevo evento**.
-2. Indica el nombre del evento y, opcionalmente, la fecha.
-3. Cada evento que crees es privado: solo tú (y el administrador del sistema) pueden verlo o editarlo.
-4. Puedes editar el nombre/fecha o eliminar un evento desde su tarjeta. Eliminar un evento borra también sus invitaciones asociadas.
+2. Indica el nombre del evento y, opcionalmente, fecha, hora, tema, lugar y dirección — estos datos también los ve la familia invitada en su enlace de RSVP.
+3. En la sección **"Solo para ti (el organizador)"** puedes anotar el aforo del lugar, marcar con qué instalaciones cuenta (bocina, hieleras, refrigerador, asador de carbón, asador de gas, alberca, etc. — puedes agregar otras libremente) y dejar notas privadas. Esta información nunca se muestra a tus invitados.
+4. Cada evento que crees es privado: solo tú (y el administrador del sistema) pueden verlo o editarlo.
+5. Puedes editar cualquiera de estos datos o eliminar un evento desde su tarjeta. Eliminar un evento borra también sus invitaciones asociadas.
 
 ## 4. Tu roster de personas (contactos)
 
