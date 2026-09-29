@@ -268,7 +268,7 @@ function sendAccountEmail(string $recipient, string $subject, string $body): boo
         return false;
     }
     $headers = [
-        'From: ' . $from,
+        'From: Tu evento, en orden <' . $from . '>',
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=UTF-8',
         'X-Mailer: TuEvento',
@@ -276,6 +276,104 @@ function sendAccountEmail(string $recipient, string $subject, string $body): boo
     $subject = trim(preg_replace('/[\r\n]+/', ' ', $subject) ?? '');
     $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     return mail($recipient, $encodedSubject, $body, implode("\r\n", $headers));
+}
+
+/**
+ * Wraps email body content in the branded "Tu evento, en orden" HTML layout.
+ * $bodyHtml must already be sanitized/escaped by the caller where needed.
+ * $cta is an optional ['url' => ..., 'label' => ...] pair rendered as a button.
+ */
+function renderEmailTemplate(string $preheader, string $bodyHtml, ?array $cta = null, string $footerNote = ''): string
+{
+    $ink = '#18312f';
+    $deep = '#173d39';
+    $green = '#2b775c';
+    $mint = '#d8f0e3';
+    $canvas = '#f2f6f4';
+    $muted = '#73827f';
+    $line = '#dfe7e3';
+
+    $preheaderSafe = htmlspecialchars($preheader, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $ctaHtml = '';
+    if ($cta && !empty($cta['url']) && !empty($cta['label'])) {
+        $ctaUrl = htmlspecialchars($cta['url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $ctaLabel = htmlspecialchars($cta['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $ctaHtml = <<<HTML
+            <tr>
+              <td align="left" style="padding:8px 0 4px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="border-radius:10px; background:{$green};">
+                      <a href="{$ctaUrl}" target="_blank" rel="noopener"
+                         style="display:inline-block; padding:13px 26px; font-family:'DM Sans',Arial,sans-serif; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:10px;">
+                        {$ctaLabel}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0 0; font-family:'DM Sans',Arial,sans-serif; font-size:12px; color:{$muted}; word-break:break-all;">
+                Si el botón no funciona, copia y pega este enlace: <a href="{$ctaUrl}" style="color:{$green};">{$ctaUrl}</a>
+              </td>
+            </tr>
+            HTML;
+    }
+
+    $footerHtml = $footerNote !== ''
+        ? '<p style="margin:0 0 6px; font-family:\'DM Sans\',Arial,sans-serif; font-size:12px; color:' . $muted . ';">' . $footerNote . '</p>'
+        : '';
+
+    return <<<HTML
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Tu evento, en orden</title>
+        </head>
+        <body style="margin:0; padding:0; background:{$canvas}; font-family:'DM Sans',Arial,sans-serif;">
+          <span style="display:none; max-height:0; overflow:hidden; opacity:0;">{$preheaderSafe}</span>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{$canvas}; padding:32px 16px;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px; background:#ffffff; border-radius:16px; overflow:hidden; border:1px solid {$line};">
+                  <tr>
+                    <td style="background:{$deep}; padding:22px 28px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td style="width:30px; height:30px; background:{$mint}; border-radius:8px; text-align:center; vertical-align:middle; font-size:16px; color:{$deep}; font-weight:700;">✓</td>
+                          <td style="padding-left:10px; font-family:'Fraunces',Georgia,serif; font-size:18px; font-weight:600; color:#ffffff;">encuentro.</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:28px 28px 24px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:'DM Sans',Arial,sans-serif; font-size:15px; line-height:1.55; color:{$ink};">
+                        <tr>
+                          <td style="padding:0 0 12px;">
+                            {$bodyHtml}
+                          </td>
+                        </tr>
+                        {$ctaHtml}
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:18px 28px; border-top:1px solid {$line}; background:{$canvas};">
+                      {$footerHtml}
+                      <p style="margin:0; font-family:'DM Sans',Arial,sans-serif; font-size:12px; color:{$muted};">Tu evento, en orden · tueventosindramas.dataholics.com.mx</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+        HTML;
 }
 
 function sendAccountTokenEmail(string $email, string $displayName, string $token, string $purpose): bool
@@ -293,9 +391,117 @@ function sendAccountTokenEmail(string $email, string $displayName, string $token
         $message = 'Solicitaste cambiar la contraseña de tu cuenta.';
     }
     $name = htmlspecialchars($displayName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $link = htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $html = '<p>Hola ' . $name . ':</p><p>' . $message . '</p><p><a href="' . $link . '">' . $action . '</a></p><p>Este enlace vence en 60 minutos. Si no solicitaste esta acción, ignora este mensaje.</p>';
+    $body = '<p style="margin:0 0 10px;">Hola ' . $name . ':</p><p style="margin:0;">' . $message . '</p>';
+    $html = renderEmailTemplate(
+        $message,
+        $body,
+        ['url' => $url, 'label' => $action],
+        'Este enlace vence en 60 minutos. Si no solicitaste esta acción, ignora este mensaje.'
+    );
     return sendAccountEmail($email, $subject, $html);
+}
+
+/**
+ * Formats a Y-m-d date as "vie 25 de sep 2026" in Spanish without requiring the intl extension.
+ */
+function formatSpanishDateLabel(?string $dateStr): string
+{
+    if (!$dateStr) {
+        return '';
+    }
+    $timestamp = strtotime($dateStr);
+    if ($timestamp === false) {
+        return $dateStr;
+    }
+    $days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+    $months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    $day = $days[(int)date('w', $timestamp)];
+    $month = $months[(int)date('n', $timestamp) - 1];
+    return $day . ' ' . date('j', $timestamp) . ' de ' . $month . ' de ' . date('Y', $timestamp);
+}
+
+function sendEventInvitationEmail(array $invite, array $event): bool
+{
+    $name = htmlspecialchars($invite['responsible_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $label = htmlspecialchars($invite['family_label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $url = htmlspecialchars($invite['rsvp_url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $title = htmlspecialchars($event['event_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+    $whenParts = [];
+    $dateLabel = formatSpanishDateLabel($event['event_date'] ?? null);
+    if ($dateLabel) {
+        $whenParts[] = $dateLabel;
+    }
+    if (!empty($event['event_time'])) {
+        $whenParts[] = substr((string)$event['event_time'], 0, 5) . ' h';
+    }
+    $whenLine = $whenParts ? htmlspecialchars(implode(' · ', $whenParts), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '';
+
+    $venueParts = array_filter([$event['venue_name'] ?? null, $event['venue_address'] ?? null]);
+    $venueLine = $venueParts ? htmlspecialchars(implode(' · ', $venueParts), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '';
+    $mapsUrl = $venueParts ? googleMapsUrlForEmail($event['venue_name'] ?? null, $event['venue_address'] ?? null) : null;
+
+    $themeLine = !empty($event['theme']) ? htmlspecialchars($event['theme'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '';
+
+    $detailRows = '';
+    $mint = '#d8f0e3';
+    $green = '#2b775c';
+    $muted = '#73827f';
+    $detailIconRow = static function (string $label, string $value) use ($mint, $green, $muted): string {
+        return <<<HTML
+            <tr>
+              <td style="padding:3px 0;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="font-family:'DM Sans',Arial,sans-serif; font-size:13px; color:{$muted}; width:78px; vertical-align:top;">{$label}</td>
+                    <td style="font-family:'DM Sans',Arial,sans-serif; font-size:14px; color:{$green}; font-weight:600;">{$value}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            HTML;
+    };
+    if ($whenLine) {
+        $detailRows .= $detailIconRow('Cuándo', $whenLine);
+    }
+    if ($venueLine) {
+        $venueValue = $mapsUrl
+            ? $venueLine . ' &middot; <a href="' . $mapsUrl . '" style="color:' . $green . ';" target="_blank" rel="noopener">Ver en Google Maps</a>'
+            : $venueLine;
+        $detailRows .= $detailIconRow('Lugar', $venueValue);
+    }
+    if ($themeLine) {
+        $detailRows .= $detailIconRow('Tema', $themeLine);
+    }
+
+    $detailsBlock = $detailRows !== ''
+        ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0; background:' . $mint . '; border-radius:10px;"><tr><td style="padding:14px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0">' . $detailRows . '</table></td></tr></table>'
+        : '';
+
+    $body = '<p style="margin:0 0 10px;">Hola ' . $name . ':</p>'
+        . '<p style="margin:0 0 4px;">La familia <strong>' . $label . '</strong> está invitada a:</p>'
+        . '<p style="margin:0 0 6px; font-family:\'Fraunces\',Georgia,serif; font-size:20px; font-weight:600;">' . $title . '</p>'
+        . $detailsBlock;
+
+    $html = renderEmailTemplate(
+        'Invitación a ' . $event['event_name'],
+        $body,
+        ['url' => $url, 'label' => 'Responder invitación'],
+        'Confirma tu asistencia lo antes posible para ayudar a organizar el evento.'
+    );
+    return sendAccountEmail($invite['responsible_email'], 'Invitación: ' . $event['event_name'], $html);
+}
+
+/**
+ * Lightweight duplicate of the frontend's googleMapsUrl() builder, kept dependency-free for use in emails.
+ */
+function googleMapsUrlForEmail(?string $venueName, ?string $venueAddress): ?string
+{
+    $query = trim(implode(', ', array_filter([$venueName, $venueAddress])));
+    if ($query === '') {
+        return null;
+    }
+    return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode($query);
 }
 
 function publicAuthRoutes(PDO $db, string $path, string $method): bool

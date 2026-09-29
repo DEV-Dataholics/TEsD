@@ -344,15 +344,7 @@ function handleDomainRoutes(PDO $db, string $path, string $method, array $user):
         foreach ($created as &$invite) {
             $invite['email_sent'] = false;
             if ($invite['responsible_email']) {
-                $name = htmlspecialchars($invite['responsible_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $label = htmlspecialchars($invite['family_label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $url = htmlspecialchars($invite['rsvp_url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $title = htmlspecialchars($event['event_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $invite['email_sent'] = sendAccountEmail(
-                    $invite['responsible_email'],
-                    'Invitación: ' . $event['event_name'],
-                    '<p>Hola ' . $name . ':</p><p>La familia ' . $label . ' está invitada a ' . $title . '.</p><p><a href="' . $url . '">Responder invitación</a></p>'
-                );
+                $invite['email_sent'] = sendEventInvitationEmail($invite, $event);
             }
         }
         unset($invite);
