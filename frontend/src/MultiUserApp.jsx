@@ -52,6 +52,12 @@ function formatTime(value) {
   return value.length > 5 ? value.slice(0, 5) : value
 }
 
+function googleMapsUrl(venueName, venueAddress) {
+  const query = [venueName, venueAddress].filter(Boolean).join(', ').trim()
+  if (!query) return null
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
 function AuthScreen({ onAction, notice, resetToken }) {
   const [mode, setMode] = useState(resetToken ? 'reset' : 'login')
   const [busy, setBusy] = useState(false)
@@ -171,7 +177,7 @@ function RsvpPage({ token }) {
           <h1>Hola, {invite.responsible_name}.</h1>
           <p className="login-copy">La familia <strong>{invite.family_label}</strong> está invitada a <strong>{invite.event_name}</strong>{invite.event_date ? ` · ${invite.event_date}` : ''}{invite.event_time ? ` · ${formatTime(invite.event_time)}` : ''}.</p>
           {invite.theme && <p className="rsvp-detail"><strong>Tema:</strong> {invite.theme}</p>}
-          {(invite.venue_name || invite.venue_address) && <p className="rsvp-detail"><strong>Lugar:</strong> {[invite.venue_name, invite.venue_address].filter(Boolean).join(' · ')}</p>}
+          {(invite.venue_name || invite.venue_address) && <p className="rsvp-detail"><strong>Lugar:</strong> {[invite.venue_name, invite.venue_address].filter(Boolean).join(' · ')}{googleMapsUrl(invite.venue_name, invite.venue_address) && <> · <a href={googleMapsUrl(invite.venue_name, invite.venue_address)} target="_blank" rel="noreferrer">Ver en Google Maps</a></>}</p>}
           <p className="rsvp-current">{message || (invite.status === 'pending' ? '¿Nos acompañan? Ajusta cuántos son si hace falta.' : invite.status === 'accepted' ? `Su respuesta: asistirán ${invite.actual_adults} adulto(s) y ${invite.actual_children} niño(s).` : 'Su respuesta: no podrán asistir.')}</p>
           {invite.status !== 'declined' && <div className="contact-form-row rsvp-count-row">
             <label className="field"><span>Adultos que asistirán</span><input type="number" min="0" max="1000" value={adults} onChange={(event) => setAdults(Number(event.target.value))} /></label>
@@ -641,7 +647,7 @@ function Workspace({ user, csrfToken, onLogout }) {
           {view === 'event' && activeEvent && <>
             <section className="page-heading event-page-heading"><div><button className="back-link" onClick={() => { setView('events'); setActiveEvent(null); setEventFormOpen(false); setEditingEvent(null) }}><ArrowLeft size={15} /> Todos los eventos</button><p className="eyebrow">EVENTO</p><h1>{activeEvent.event_name}</h1><p className="page-subtitle">{[activeEvent.event_date || 'Fecha por definir', formatTime(activeEvent.event_time), activeEvent.theme].filter(Boolean).join(' · ')}</p></div><div className="event-actions"><button className="button button-secondary" onClick={() => { setEditingEvent(activeEvent); setEventFormOpen(true) }}><Pencil size={15} /> Editar</button><button className="button button-quiet" onClick={() => deleteEvent(activeEvent)}><Trash2 size={15} /> Eliminar evento</button></div></section>
             {(activeEvent.venue_name || activeEvent.venue_address || activeEvent.venue_capacity || (activeEvent.venue_facilities && activeEvent.venue_facilities.length) || activeEvent.host_notes) && <section className="event-details-panel">
-              {(activeEvent.venue_name || activeEvent.venue_address) && <p><strong>Lugar:</strong> {[activeEvent.venue_name, activeEvent.venue_address].filter(Boolean).join(' · ')}</p>}
+              {(activeEvent.venue_name || activeEvent.venue_address) && <p><strong>Lugar:</strong> {[activeEvent.venue_name, activeEvent.venue_address].filter(Boolean).join(' · ')}{googleMapsUrl(activeEvent.venue_name, activeEvent.venue_address) && <> · <a href={googleMapsUrl(activeEvent.venue_name, activeEvent.venue_address)} target="_blank" rel="noreferrer">Ver en Google Maps</a></>}</p>}
               {(activeEvent.venue_capacity || (activeEvent.venue_facilities && activeEvent.venue_facilities.length) || activeEvent.host_notes) && <div className="host-only-panel host-only-summary">
                 <p className="host-only-label">Solo para ti (el organizador)</p>
                 {activeEvent.venue_capacity ? <p><strong>Aforo:</strong> {activeEvent.venue_capacity} personas</p> : null}
