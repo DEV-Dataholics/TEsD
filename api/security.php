@@ -268,7 +268,7 @@ function sendAccountEmail(string $recipient, string $subject, string $body): boo
         return false;
     }
     $headers = [
-        'From: Tu evento, en orden <' . $from . '>',
+        'From: "Tu evento, en orden" <' . $from . '>',
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=UTF-8',
         'X-Mailer: TuEvento',
