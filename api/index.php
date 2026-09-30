@@ -422,6 +422,60 @@ try {
     }
 
     $db = database();
+    
+    // Solicitud de Proveedores (Registro público)
+    if (($path === '/solicitudes_proveedores/create_solicitud' || $path === '/solicitudes_proveedores') && $method === 'POST') {
+        $data = requestData();
+        $email = strtolower(trim((string)($data['email'] ?? '')));
+        $nombre = trim((string)($data['nombre'] ?? ''));
+        $tipo = filter_var($data['tipo_proveedor_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
+        $detalles = trim((string)($data['detalles_servicios'] ?? ''));
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            respond(['error' => 'Por favor introduce un correo electrónico válido.'], 422);
+        }
+        if ($nombre === '') {
+            $nombre = explode('@', $email)[0];
+        }
+
+        try {
+            $db = database();
+            $db->exec("CREATE TABLE IF NOT EXISTS solicitudes_proveedores (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nombre VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                tipo_proveedor_id INT NULL,
+                detalles_servicios TEXT,
+                estado ENUM('pendiente', 'aprobado', 'rechazado') DEFAULT 'pendiente',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )");
+
+            $stmt = $db->prepare(
+                "INSERT INTO solicitudes_proveedores (nombre, email, tipo_proveedor_id, detalles_servicios)
+                 VALUES (:nombre, :email, :tipo, :detalles)"
+            );
+            $stmt->execute([
+                'nombre' => $nombre,
+                'email' => $email,
+                'tipo' => $tipo,
+                'detalles' => $detalles ?: null
+            ]);
+
+            respond([
+                'status' => 'success',
+                'message' => 'Solicitud enviada exitosamente. El administrador revisará tu información.',
+                'data' => [
+                    'id' => (int)$db->lastInsertId(),
+                    'email' => $email
+                ]
+            ], 201);
+        } catch (Throwable $e) {
+            error_log('Error en registro de solicitud de proveedor: ' . $e->getMessage());
+            respond(['error' => 'No se pudo guardar la solicitud. Verifica los datos.'], 500);
+        }
+    }
+
     if (publicAuthRoutes($db, $path, $method)) {
         respond(['error' => 'Ruta no encontrada.'], 404);
     }
@@ -433,6 +487,44 @@ try {
     }
     if (handleDomainRoutes($db, $path, $method, $user)) {
         respond(['error' => 'Ruta no encontrada.'], 404);
+    }
+
+    
+    if ($path === '/solicitudes_proveedores' && $method === 'GET') {
+        if ($user['role'] !== 'admin') {
+            respond(['error' => 'Acceso denegado.'], 403);
+        }
+        try {
+            $db->exec("CREATE TABLE IF NOT EXISTS solicitudes_proveedores (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nombre VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                tipo_proveedor_id INT NULL,
+                detalles_servicios TEXT,
+                estado ENUM('pendiente', 'aprobado', 'rechazado') DEFAULT 'pendiente',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )");
+            $rows = $db->query("SELECT * FROM solicitudes_proveedores ORDER BY id DESC")->fetchAll();
+            respond(['data' => $rows]);
+        } catch (Throwable $e) {
+            respond(['error' => 'Error al consultar solicitudes.'], 500);
+        }
+    }
+
+    if (preg_match('#^/solicitudes_proveedores/(\\d+)$#', $path, $matches) && $method === 'PATCH') {
+        if ($user['role'] !== 'admin') {
+            respond(['error' => 'Acceso denegado.'], 403);
+        }
+        $solicitudId = (int)$matches[1];
+        $data = requestData();
+        $nuevoEstado = $data['estado'] ?? 'pendiente';
+        if (!in_array($nuevoEstado, ['pendiente', 'aprobado', 'rechazado'], true)) {
+            respond(['error' => 'Estado no válido.'], 422);
+        }
+        $stmt = $db->prepare("UPDATE solicitudes_proveedores SET estado = :estado WHERE id = :id");
+        $stmt->execute(['estado' => $nuevoEstado, 'id' => $solicitudId]);
+        respond(['message' => 'Estado de solicitud actualizado.', 'id' => $solicitudId, 'estado' => $nuevoEstado]);
     }
 
     if ($path === '/events' && $method === 'GET') {
