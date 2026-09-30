@@ -81,6 +81,7 @@ function AuthScreen({ onAction, notice, resetToken }) {
     recover: ['Recupera tu acceso.', 'Te enviaremos un enlace para restablecer tu contraseña.'],
     resend: ['Confirma tu correo.', 'Solicita un nuevo enlace de verificación.'],
     reset: ['Nueva contraseña.', 'Elige una contraseña de al menos 12 caracteres.'],
+    provider: ['Registro de Proveedores.', 'Envía tus datos para colaborar en eventos.'],
   }
   const [title, subtitle] = titles[mode]
 
@@ -97,10 +98,16 @@ function AuthScreen({ onAction, notice, resetToken }) {
           {['login', 'register', 'reset'].includes(mode) && (
             <label>{mode === 'reset' ? 'Nueva contraseña' : 'Contraseña'}<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={12} required /></label>
           )}
+          {mode === 'provider' && (
+            <>
+              <label>Nombre o Empresa<input name="nombre" placeholder="Ej. Banquetería Doña Rosa" required /></label>
+              <label>Servicios ofrecidos<textarea name="detalles_servicios" rows="3" placeholder="Banquete, Sonido, Mobiliario, Fotografía..." required /></label>
+            </>
+          )}
           {message && <p className="form-success" role="status">{message}</p>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button button-primary button-wide" disabled={busy}>
-            {busy ? 'Procesando…' : ({ login: 'Entrar', register: 'Crear cuenta', recover: 'Enviar enlace', resend: 'Reenviar verificación', reset: 'Guardar contraseña' }[mode])}
+            {busy ? 'Procesando…' : ({ login: 'Entrar', register: 'Crear cuenta', recover: 'Enviar enlace', resend: 'Reenviar verificación', reset: 'Guardar contraseña', provider: 'Enviar solicitud' }[mode])}
             {!busy && <ArrowRight size={16} />}
           </button>
         </form>
@@ -211,6 +218,7 @@ function Workspace({ user, csrfToken, onLogout }) {
   const [invitations, setInvitations] = useState([])
   const [families, setFamilies] = useState([])
   const [users, setUsers] = useState([])
+  const [solicitudesProveedores, setSolicitudesProveedores] = useState([])
   const [activeEvent, setActiveEvent] = useState(null)
   const [eventTab, setEventTab] = useState('invitations')
   const [selectedContacts, setSelectedContacts] = useState([])
@@ -345,8 +353,22 @@ function Workspace({ user, csrfToken, onLogout }) {
 
   async function loadAdmin() {
     try {
-      const result = await apiRequest('/admin/users')
-      setUsers(result.data || [])
+      const [uRes, sRes] = await Promise.all([
+        apiRequest('/admin/users'),
+        apiRequest('/solicitudes_proveedores').catch(() => ({ data: [] }))
+      ])
+      setUsers(uRes.data || [])
+      setSolicitudesProveedores(sRes.data || [])
+    } catch (error) {
+      setNotice({ kind: 'error', text: error.message })
+    }
+  }
+
+  async function updateSolicitud(id, estado) {
+    try {
+      await apiRequest(`/solicitudes_proveedores/${id}`, { method: 'PATCH', body: { estado } }, csrfToken)
+      setSolicitudesProveedores(prev => prev.map(s => s.id === id ? { ...s, estado } : s))
+      setNotice({ kind: 'success', text: `Solicitud actualizada a ${estado}.` })
     } catch (error) {
       setNotice({ kind: 'error', text: error.message })
     }
@@ -442,6 +464,32 @@ function Workspace({ user, csrfToken, onLogout }) {
           {view === 'admin' && user.role === 'admin' && <>
             <section className="page-heading"><div><p className="eyebrow">CONTROL GLOBAL · AUDITADO</p><h1>Administración.</h1><p className="page-subtitle">Cuentas y acceso a los datos del sistema.</p></div></section>
             <section className="management-panel"><div className="panel-title-row"><div><h2>Cuentas</h2><p>Desactiva el acceso sin eliminar el historial.</p></div><span className="response-count">{users.length}</span></div><div className="admin-user-list">{users.map((account) => <article className="admin-user-row" key={account.id}><span className="member-avatar"><UserRound size={15} /></span><div className="member-info"><strong>{account.display_name}</strong><small>{account.email}</small></div><select className="role-select" value={account.role} disabled={account.id === user.id} onChange={(event) => updateUser(account.id, { role: event.target.value })} aria-label={`Rol de ${account.email}`}><option value="user">Usuario</option><option value="admin">Admin</option></select><span className={`rsvp-status rsvp-status-${account.status === 'active' ? 'accepted' : 'pending'}`}>{account.status === 'active' ? 'Activa' : account.status === 'disabled' ? 'Desactivada' : 'Pendiente'}</span>{account.id !== user.id && <button className="button button-quiet" onClick={() => updateUser(account.id, { status: account.status === 'disabled' ? 'active' : 'disabled' })}>{account.status === 'disabled' ? 'Activar' : 'Desactivar'}</button>}</article>)}</div></section>
+            <section className="management-panel" style={{ marginTop: '24px' }}>
+              <div className="panel-title-row">
+                <div><h2>Solicitudes de Proveedores</h2><p>Proveedores registrados para eventos.</p></div>
+                <span className="response-count">{solicitudesProveedores.length}</span>
+              </div>
+              <div className="admin-user-list">
+                {solicitudesProveedores.length ? solicitudesProveedores.map((sol) => (
+                  <article className="admin-user-row" key={sol.id}>
+                    <span className="member-avatar">{sol.nombre.charAt(0).toUpperCase()}</span>
+                    <div className="member-info">
+                      <strong>{sol.nombre}</strong>
+                      <small>{sol.email} {sol.detalles_servicios ? `• ${sol.detalles_servicios}` : ''}</small>
+                    </div>
+                    <span className={`rsvp-status rsvp-status-${sol.estado === 'aprobado' ? 'accepted' : sol.estado === 'rechazado' ? 'declined' : 'pending'}`}>
+                      {sol.estado === 'aprobado' ? 'Aprobada' : sol.estado === 'rechazado' ? 'Rechazada' : 'Pendiente'}
+                    </span>
+                    {sol.estado === 'pendiente' && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="button button-primary" style={{ padding: '4px 10px', fontSize: '13px' }} onClick={() => updateSolicitud(sol.id, 'aprobado')}>Aprobar</button>
+                        <button className="button button-quiet" style={{ padding: '4px 10px', fontSize: '13px' }} onClick={() => updateSolicitud(sol.id, 'rechazado')}>Rechazar</button>
+                      </div>
+                    )}
+                  </article>
+                )) : <p style={{ color: 'var(--text-muted)', padding: '16px 0' }}>No hay solicitudes de proveedores pendientes.</p>}
+              </div>
+            </section>
           </>}
         </div>
       </main>
@@ -500,6 +548,7 @@ function App() {
     if (mode === 'resend') return (await post('/auth/resend-verification', data)).message
     if (mode === 'recover') return (await post('/auth/forgot-password', data)).message
     if (mode === 'reset') return (await post('/auth/reset-password', data)).message
+    if (mode === 'provider') return (await post('/solicitudes_proveedores/create_solicitud', data)).message
     return ''
   }
 
